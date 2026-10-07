@@ -401,7 +401,12 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         const receipts: Record<string, { verified: boolean; url?: string; evidence: string }> = { instagram: found.instagram! };
         if (facebook) receipts.facebook = found.facebook ?? await new FacebookVerifier(this.base, this.signal).verifyPost(input, false, this.mediaPath ? { mediaPath: this.mediaPath } : false);
         // Best effort: open the new Reel so the in-run first comment can be pinned. If this fails, the comment job retries later.
-        try { await this.start('com.burbn.instagram'); if (!await this.hasExactCaption()) await this.openMatchingTrialReel(input.caption.trim().split('\n')[0].slice(0, 30).trim()); } catch {}
+        try {
+            await this.start('com.burbn.instagram');
+            if (!await this.hasExactCaption() && !await this.openByLink(found.instagram!.url)) await this.openMatchingTrialReel(input.caption.trim().split('\n')[0].slice(0, 30).trim());
+            try { await this.verifyRelatedReel(receipts); }
+            catch (e) { receipts.instagram!.evidence += '; related Reel NOT confirmed: ' + (e instanceof Error ? e.message : String(e)); }
+        } catch {}
         return receipts;
     }
 
@@ -464,6 +469,18 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         await this.tapPoint(trial.x+trial.width/2,trial.y+trial.height/2);
         await this.waitFor('accessibility id', 'reels-video-thumbnail', 'trial reels grid', 15_000);
     }
+    /** Open the new Reel straight from its Graph permalink (verified Oct 7 14:42: lands on the owned Reel with its Watch button).
+     * Falls back to the Trial grid when the link is unknown or the caption does not match. */
+    private async openByLink(url?: string): Promise<boolean> {
+        if (!/^http:\/\/127\.0\.0\.1:/.test(this.base)) return false; // unit tests use fake hosts
+        try { url ??= (await metaReceipts(this.input!.caption)).instagram?.url; } catch { return false; }
+        if (!url || !/^https:\/\/www\.instagram\.com\/reel\//.test(url)) return false;
+        await this.request(this.session + '/url', { url });
+        await this.waitForOwnReelViewer().catch(() => undefined);
+        await this.sleep(1500);
+        return this.hasExactCaption();
+    }
+
     private async openMatchingTrialReel(prefix: string) {
         await this.openTrialReelsGrid();
         // A delayed upload may no longer be first. Inspect recent visible reels without reposting.
@@ -506,7 +523,7 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
     async commentOnPost(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly=false):Promise<CommentResult>{
         this.input=input;
         await this.start('com.burbn.instagram');
-        if(!await this.hasExactCaption())await this.openMatchingTrialReel(input.caption.slice(0,30));
+        if(!await this.hasExactCaption()&&!await this.openByLink())await this.openMatchingTrialReel(input.caption.slice(0,30));
         const result=await this.commentAndPin(text,claim,existingOnly);
         return {...result,commentVerified:true,pinned:true,evidence:'Exact full caption and own comment matched; native comment reports Comment is pinned.'};
     }
