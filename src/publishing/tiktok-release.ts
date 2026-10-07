@@ -189,6 +189,8 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         await this.waitFor('accessibility id','Edit cover','Visible Edit cover',10_000);
         const cover=await this.composerField('Edit cover');
         await this.tapPoint(cover.rect.x+cover.rect.width/2,cover.rect.y+cover.rect.height/2);
+        // The cover editor can load slowly (Oct 7 16:24 stopped here; a rehearsal minutes later passed). Wait for it.
+        await this.waitFor('accessibility id','Drag to select','Video cover timeline',10_000);
         const slider=await this.rect('accessibility id','Drag to select','Video cover timeline');
         let percent=parseFloat(await this.read('accessibility id','Drag to select','value','Opening cover frame'));
         if(percent!==0){
