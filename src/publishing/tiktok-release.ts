@@ -165,6 +165,16 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         const rect=await this.rect('accessibility id',albumName,'Dedicated video album');
         if(rect.y<=115 || rect.y+rect.height>=830)throw new Error('Dedicated upload album is outside the visible list');
     }
+    /** A caption ending in hashtags leaves TikTok's full-screen editor and suggestion list open, which hides Edit cover
+     * (Oct 7 14:25). Hide the keyboard; only while the keyboard is still up, its back arrow closes the editor, not the composer. */
+    private async closeCaptionEditor() {
+        for(let attempt=0;attempt<2&&await this.visible('class name','XCUIElementTypeKeyboard');attempt++){
+            if(attempt===0)await this.raw(this.session+'/wda/keyboard/dismiss',{}).catch(()=>undefined);
+            else await this.tapElement('accessibility id','(publishPageBackButton)','Close caption editor');
+            await this.sleep(1000);
+        }
+        if(await this.visible('class name','XCUIElementTypeKeyboard'))throw new Error('TikTok caption editor did not close');
+    }
     private async prepareComposer(input: PostingInput) {
         await this.depth(60);
         const field=await this.composerField('Add description...');
@@ -172,8 +182,10 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         if(initial!=='Add description...'&&initial!=='')throw new Error('TikTok caption field was not empty');
         await this.tapPoint(field.rect.x+30,field.rect.y+30);
         await this.request(this.session+'/wda/keys',{value:[input.caption]},60_000);
+        await this.closeCaptionEditor();
         const current=await this.composerField('Add description...');
         if((await this.request(`${this.session}/element/${current.id}/attribute/value`)).value!==input.caption)throw new Error('TikTok caption readback failed');
+        await this.waitFor('accessibility id','Edit cover','Visible Edit cover',10_000);
         const cover=await this.composerField('Edit cover');
         await this.tapPoint(cover.rect.x+cover.rect.width/2,cover.rect.y+cover.rect.height/2);
         const slider=await this.rect('accessibility id','Drag to select','Video cover timeline');

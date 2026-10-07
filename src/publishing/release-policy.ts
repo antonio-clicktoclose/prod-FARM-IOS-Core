@@ -63,13 +63,13 @@ export interface ReleaseJournal {
     save(state: 'published' | 'needs_review', result: unknown): Promise<void>;
 }
 export async function releaseOnce(input: PostingInput, media: unknown, driver: ReleaseDriver, journal: ReleaseJournal) {
-    let claimed = false;
+    let claimed = false, evidence: ReleaseEvidence | undefined;
     try {
         validatePostingInput(input);
         const options={nativeYouTubeLayout:driver.youtubeNative===true};
         assertReleaseTargets(input,options);
         if (/https?:\/\/|www\./i.test(input.caption)) throw new Error('Remove URLs from the public caption');
-        const evidence = await driver.preflight(input, media);
+        evidence = await driver.preflight(input, media);
         assertRelease(input, evidence,options);
         claimed = await journal.claimShare();
         if (!claimed) throw new Error('This post already has a Share attempt; inspect it before any further action');
@@ -78,7 +78,7 @@ export async function releaseOnce(input: PostingInput, media: unknown, driver: R
         assertReceipts(input, receipts);
         await journal.save('published', { receipts, evidence, ...(driver.nativeFlowFingerprint?{nativeFlowFingerprint:driver.nativeFlowFingerprint}:{}) });
     } catch (error) {
-        await journal.save('needs_review', { error: error instanceof Error ? error.message : String(error), shareAttempted: claimed, ...(error instanceof ReceiptVerificationError?{receipts:error.receipts}:{}), ...(driver.nativeFlowFingerprint?{nativeFlowFingerprint:driver.nativeFlowFingerprint}:{}) });
+        await journal.save('needs_review', { error: error instanceof Error ? error.message : String(error), shareAttempted: claimed, ...(evidence?{evidence}:{}), ...(error instanceof ReceiptVerificationError?{receipts:error.receipts}:{}), ...(driver.nativeFlowFingerprint?{nativeFlowFingerprint:driver.nativeFlowFingerprint}:{}) });
         throw error;
     }
 }
