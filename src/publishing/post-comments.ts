@@ -45,6 +45,8 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         await c.query(`UPDATE scheduler.engagement_actions SET status='done',result=$2,updated_at=now() WHERE claim_key=$1`,[key,JSON.stringify(result)]);
         await c.query(`UPDATE scheduler.publishing_items SET results=jsonb_set(results,ARRAY[$2],$3::jsonb),updated_at=now() WHERE id=$1`,[id,platform+'Comment',JSON.stringify(result)]);
     } catch(error) {
+        // Save a screenshot and screen tree for any failed comment, like failed posts (release-failures/).
+        if(ownsAttempt)await (driver as {captureFailure?:(l:string)=>Promise<string>}).captureFailure?.(`comment-${platform}-${id.slice(0,8)}`).catch(()=>undefined);
         // Errors before the job is reserved used to vanish; log them so a skipped comment shows why.
         if(!ownsAttempt)console.error(new Date().toISOString(),'comment job skipped',key,error instanceof Error?error.message:String(error));
         if(ownsAttempt)await c.query(`UPDATE scheduler.engagement_actions SET status=$2,result=COALESCE(result,'{}'::jsonb)||$3::jsonb,updated_at=now() WHERE claim_key=$1`,[key,claimed?'uncertain_review':'failed_before_action',JSON.stringify({error:error instanceof Error?error.message:String(error)})]);
