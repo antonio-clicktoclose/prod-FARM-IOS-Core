@@ -42,7 +42,10 @@ export class YouTubeComments extends PreparedYouTubeRelease {
             await this.assertInputApp();
             await this.request(this.session+'/element/'+box+'/click',{});
             await this.request(this.session+'/wda/keys',{value:[text]});
-            if(String((await this.request(this.session+'/element/'+box+'/attribute/value')).value??'')!==text)throw new Error('YouTube comment text readback failed');
+            // A comment that wraps to two lines replaces the text view (Oct 7 16:49, stale element): find it again.
+            await this.sleep(500);
+            const typed=await this.waitFor('predicate string','type == "XCUIElementTypeTextView" AND visible == 1','Typed comment box');
+            if(String((await this.request(this.session+'/element/'+typed+'/attribute/value')).value??'')!==text)throw new Error('YouTube comment text readback failed');
             await claim();claimed=true;
             await this.tapElement('predicate string','name == "id.comment.send.button" AND label == "Send comment" AND visible == 1','Send comment');
             for(let n=0;n<15&&!own;n++){await this.sleep(1000);own=await this.ownComment(text);}
