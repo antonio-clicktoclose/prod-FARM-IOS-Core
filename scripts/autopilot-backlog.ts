@@ -60,13 +60,19 @@ try{
  const hour=3600000,next=(()=>{const t=new Date(Date.now()+20*60000);t.setUTCSeconds(0,0);const s=new Date(t);s.setUTCMinutes(minute);return s<t?s.getTime()+hour:s.getTime();})();
  const runAtOf=(i:any)=>new Date(releases.get(i.id).run_at).getTime();
  // Posts due within 20 minutes stay where they are; later ones form the shifting queue in their current order.
- const shifting=keptArmed.filter(i=>runAtOf(i)>=Date.now()+20*60000&&!releases.get(i.id).share_claimed_at);
+ // Only posts this script scheduled may shift. Posts other tools armed for a set time keep it, and their hours are skipped.
+ const owned=(i:any)=>!!i.results?.autopilotBacklog;
+ const shifting=keptArmed.filter(i=>owned(i)&&runAtOf(i)>=Date.now()+20*60000&&!releases.get(i.id).share_claimed_at);
+ const fixedHours=new Set(keptArmed.filter(i=>!owned(i)).map(i=>Math.floor(runAtOf(i)/hour)));
  const keptGroups=[...new Set(shifting.sort((a,b)=>runAtOf(a)-runAtOf(b)).map(i=>i.media.sha256))].map(hash=>shifting.filter(i=>i.media.sha256===hash));
  // A Short joins the hour of the same video's armed Instagram/TikTok slot ("post all at once"); others get lane slots.
  const socialSlot=new Map<string,number>();
  if(lane==='youtube')for(const j of items)if(!inLane(j)&&releases.get(j.id)?.state==='armed'&&runAtOf(j)>Date.now()+15*60000)
   socialSlot.set(j.media.sha256,Math.min(socialSlot.get(j.media.sha256)??Infinity,runAtOf(j)));
- let laneSlot=0;const slotFor=(sha:string)=>new Date(socialSlot.get(sha)??next+(laneSlot++)*hour).toISOString();
+ let laneSlot=0;const slotFor=(sha:string)=>{
+  if(socialSlot.has(sha))return new Date(socialSlot.get(sha)!).toISOString();
+  let t=next+(laneSlot++)*hour;while(fixedHours.has(Math.floor(t/hour)))t=next+(laneSlot++)*hour;
+  return new Date(t).toISOString();};
  for(const group of groups){
   const runAt=slotFor(group[0].media.sha256);
   for(const i of group){

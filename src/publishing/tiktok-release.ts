@@ -188,7 +188,8 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         const saves=[];
         for(const row of (await this.request(this.session+'/elements',{using:'accessibility id',value:'Save'})).value??[]){
             const id=this.id(row),r=(await this.request(this.session+'/element/'+id+'/rect')).value;
-            if((await this.request(this.session+'/element/'+id+'/displayed')).value===true&&r.y>=40&&r.y+r.height<=140&&r.x>=250)saves.push(r);
+            const type=String((await this.request(this.session+'/element/'+id+'/name')).value??'');
+            if(type==='XCUIElementTypeButton'&&(await this.request(this.session+'/element/'+id+'/displayed')).value===true&&r.y>=40&&r.y+r.height<=140&&r.x>=250)saves.push(r);
         }
         if(saves.length!==1)throw new Error('TikTok cover Save is missing or ambiguous; nothing was tapped');
         await this.assertInputApp();

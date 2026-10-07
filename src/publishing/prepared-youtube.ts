@@ -81,7 +81,15 @@ export class PreparedYouTubeRelease extends WdaApp implements ReleaseDriver {
             await this.sleep(1500);
             source=String((await this.request(this.session+'/source')).value);nodes=visibleNativeNodes(source);
             const unique=(rows:typeof nodes)=>[...new Map(rows.map(n=>[[n.x,n.y,n.width,n.height,n.label].join('|'),n])).values()];
-            const named=unique(nodes.filter(n=>n.label?.startsWith(input.youtube!.title+' -')&&n.label.includes('Antonio Monteiro')));
+            const findNamed=()=>unique(nodes.filter(n=>n.label?.startsWith(input.youtube!.title+' -')&&n.label.includes('Antonio Monteiro')));
+            let named=findNamed();
+            // A new Short can take a minute to appear in the channel grid (Oct 7: the older top tile was opened).
+            // Pull to refresh and look again before falling back to the first published tile.
+            for(let attempt=0;attempt<4&&!named.length;attempt++){
+                await this.sleep(20_000);await this.assertInputApp();
+                await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:320,toX:215,toY:760,duration:0.4});await this.sleep(2500);
+                source=String((await this.request(this.session+'/source')).value);nodes=visibleNativeNodes(source);named=findNamed();
+            }
             // This app version reuses index-0 on every grid cell, including Drafts.
             // Inspect the first published tile once; the exact viewer is the receipt.
             const published=unique(nodes.filter(n=>n.name==='short-item-index-0'&&/^(No views|[\d.,KM]+ views)$/.test(n.label)&&n.y>=200&&n.y+n.height<=933)).sort((a,b)=>a.y-b.y||a.x-b.x);

@@ -48,7 +48,17 @@ try {
             const status = await wda('/status');
             if (!status.value?.ready) issues.push({ key: 'wda:notready', text: 'The phone connection (WebDriverAgent) is not ready.' });
             else if ((await wda('/wda/locked')).value !== false) issues.push({ key: 'phone:locked', text: 'The iPhone is *locked*. Posts wait until it is unlocked.' });
-        } catch { issues.push({ key: 'wda:down', text: 'The phone connection (WebDriverAgent) is not answering.' }); }
+        } catch {
+            // The WDA service explains why the runner is down, e.g. the iPhone waiting for its XCTest passcode.
+            let why = '';
+            try { why = JSON.parse(execFileSync('curl', ['-s', '-m', '5', '--unix-socket', '.wda/wda-service.sock', 'http://localhost/devices'], { encoding: 'utf8' })).devices?.[0]?.message ?? ''; } catch {}
+            const passcode = /automation approval prompt|enabling automation/i.test(why);
+            // Retry the runner each check, so posting resumes on its own once the passcode has been entered.
+            if (/retries stopped|error/i.test(why)) try { execFileSync('curl', ['-s', '-m', '20', '-X', 'POST', '--unix-socket', '.wda/wda-service.sock', 'http://localhost/devices/00008130-000229EE1AA0001C/reconnect']); } catch {}
+            issues.push({ key: 'wda:down:' + (passcode ? 'passcode' : 'other'), text: passcode
+                ? '*The iPhone needs its passcode for XCTest.* Unlock the phone and enter the passcode on the "Enter iPhone Passcode for XCTest" prompt. Posting is paused until then; the worker resumes on its own after a reconnect.'
+                : `The phone connection (WebDriverAgent) is not answering.${why ? `\n> ${why}` : ''}` });
+        }
         // Posts that stopped in the last 20 minutes
         for (const r of await q(`SELECT i.id,i.media->>'name' n,i.input->'targets'->0->>'platform' pl,r.share_claimed_at IS NOT NULL c,r.result->>'error' e,r.result->>'failureEvidence' ev
             FROM scheduler.publishing_releases r JOIN scheduler.publishing_items i ON i.id=r.item_id

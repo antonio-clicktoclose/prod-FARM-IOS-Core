@@ -18,8 +18,15 @@ test('an existing Instagram composer or gallery is preserved even when the tab b
         assert.equal(driver.inputRequests,0);
     }
 });
-test('Instagram stops on a restored-draft prompt before touching gallery controls',async()=>{
-    const driver=new DraftGuardProbe(new Set(['Continue editing your draft?']));
+test('Instagram answers a restored-draft prompt with Start new video, which keeps the draft',async()=>{
+    const driver=new DraftGuardProbe(new Set(['Continue editing your draft?'])) as any;
+    const taps:string[]=[];driver.sleep=async()=>{};
+    driver.tapElement=async(_u:string,value:string)=>{taps.push(value);driver.controls=new Set(['gallery-header-title']);};
+    await driver.checkPrompt();
+    assert.deepEqual(taps,['label == "Start new video" AND visible == 1']);
+});
+test('Instagram still stops on a discard-draft prompt',async()=>{
+    const driver=new DraftGuardProbe(new Set(['camera-discard-draft'])) as any;driver.sleep=async()=>{};
     await assert.rejects(driver.checkPrompt(),/not discarded/);
     assert.equal(driver.inputRequests,0);
 });

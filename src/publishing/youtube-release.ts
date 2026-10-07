@@ -110,7 +110,10 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
  protected async completeGallery(input:PostingInput,media:ReleaseMedia,albumName:string,durationSeconds:number):Promise<ReleaseEvidence>{
   this.ready=false;this.input=input;
   if(createHash('sha256').update(await readFile(media.path)).digest('hex')!==media.sha256)throw Error('Source changed before gallery selection');
-  const current=await this.nodes(),sourceGallery=current.some(n=>n.name==='id.creation.gallery.title.create'&&n.label===albumName);
+  // The picker renders after the album-list tap (seen Oct 7 at 12:54). Wait for one of its known states first.
+  let current=await this.nodes();
+  for(let n=0;n<10&&!current.some(x=>x.name==='id.creation.gallery.title.create'||x.name==='id.creation.photolibrary.album.cell'||x.label==='All Albums');n++){await this.sleep(1000);current=await this.nodes();}
+  const sourceGallery=current.some(n=>n.name==='id.creation.gallery.title.create'&&n.label===albumName);
   if(!sourceGallery){
    if(await this.visible('accessibility id','All Albums'))await this.tapElement('accessibility id','All Albums','All Albums');
    else if(!current.some(n=>n.name==='id.creation.photolibrary.album.cell'))throw Error('Source-bound album picker is not active');
@@ -198,11 +201,12 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
   if(distinct.length!==1)throw Error('Description Back is ambiguous');const back=distinct[0]!;
   if(back.x< -5||back.x>5||back.y<50||back.y>65||back.width!==48||back.height!==48)throw Error('Description Back moved');
   await this.tapPoint(back.x+back.width/2,back.y+back.height/2);await this.sleep(500);
-  if(!await this.visible('accessibility id','id.metadata_editor.upload_button')){
-   // The first Back can close hashtag suggestions. A second is permitted only
-   // after the real description Back is visible; it never touches Upload.
-   await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Leave description');
-  }
+  // Hashtag suggestions mark the whole screen hidden, so decide by existence, not visibility (Oct 7 13:24):
+  // the Upload button exists only on the details screen. If it is absent, the first Back only closed the
+  // suggestions, so tap the same verified Back position once more. Never touches Upload.
+  const uploadExists=async()=>((await this.request(this.session+'/elements',{using:'accessibility id',value:'id.metadata_editor.upload_button'})).value??[]).length>0;
+  if(!await uploadExists()){await this.assertInputApp();await this.tapPoint(back.x+back.width/2,back.y+back.height/2);await this.sleep(800);}
+  if(!await uploadExists())throw Error('Phone control is missing: Leave description');
   // Hashtag suggestions can stay open over the details screen. While open, iOS reports the whole screen hidden
   // (Upload, Related video, title). Tap the title bar by position, which is not a control, to close the list.
   for(let n=0;n<4&&!await this.visible('accessibility id','id.metadata_editor.upload_button');n++){

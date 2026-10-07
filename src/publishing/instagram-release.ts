@@ -178,9 +178,12 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         await this.waitFor('accessibility id','Select a reel','Owned Reel picker');
         // The heading appears before the grid finishes loading. Re-read once,
         // without touching the grid, if its cover is not yet identifiable.
+        // Thumbnails can take several seconds to render (blank grid seen Oct 7 13:25). Re-read without touching the grid.
         let found;
-        try{found=await locateRelatedCover(Buffer.from((await this.request('/screenshot')).value,'base64'),related);}
-        catch{await this.sleep(1200);found=await locateRelatedCover(Buffer.from((await this.request('/screenshot')).value,'base64'),related);}
+        for(let attempt=0;;attempt++){
+            try{found=await locateRelatedCover(Buffer.from((await this.request('/screenshot')).value,'base64'),related);break;}
+            catch(e){if(attempt>=10)throw e;await this.sleep(1500);}
+        }
         await this.tapPoint(found.x,found.y);
         await this.waitFor('accessibility id','Edit linked reel','Link title');
         const rows=(await this.request(this.session+'/elements',{using:'class name',value:'XCUIElementTypeTextField'})).value;
@@ -245,9 +248,16 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
     }
 
     protected async requireNoDraftPrompt() {
-        for (const name of ['camera-discard-draft', 'Continue editing your draft?']) {
-            if (await this.visible('accessibility id', name))
-                throw new Error('An existing Instagram draft needs review; it was not discarded');
+        // "Continue editing your draft?" appears a moment after Create (Oct 7 13:36). Start new video keeps the
+        // saved draft in Drafts and opens a fresh gallery. A discard prompt still stops the run.
+        for (let n = 0; n < 8; n++) {
+            if (await this.visible('accessibility id', 'camera-discard-draft')) throw new Error('An existing Instagram draft needs review; it was not discarded');
+            if (await this.visible('accessibility id', 'Continue editing your draft?')) {
+                await this.tapElement('predicate string', 'label == "Start new video" AND visible == 1', 'Start new video (draft kept)');
+                await this.sleep(800); continue;
+            }
+            if (await this.visible('accessibility id', 'gallery-header-title')) return;
+            await this.sleep(500);
         }
     }
 

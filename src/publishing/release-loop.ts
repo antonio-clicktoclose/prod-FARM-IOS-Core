@@ -169,7 +169,10 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                             await new NativeMuteGuard(base,commentSignal).prepare();
                             return comment(input,text,claim);
                         };
-                        await runPostComment(pool,item.id,platform,driver);ran=true;break;
+                        try{await runPostComment(pool,item.id,platform,driver);}
+                        // Close the app after every comment job: TikTok leaves its comment menu open after the Pin check (Oct 7).
+                        finally{await (driver as {resetAfterFailure?:()=>Promise<void>}).resetAfterFailure?.().catch(()=>undefined);}
+                        ran=true;break;
                     }
                     if(ran)break;
                 }
