@@ -15,6 +15,7 @@ import { loadRegisteredDevices } from '../devices/registry.js';
 import { TimedReleaseStore } from './timed-release.js';
 import { TikTokRelease } from './tiktok-release.js';
 import {FacebookComments} from './facebook-comments.js';
+import {YouTubeComments} from './youtube-comments.js';
 import {runPostComment, commentKey, type CommentPlatform} from './post-comments.js';
 import {ENGAGEMENT_SCHEMA} from './engage-task.js';
 import { InstagramRelease } from './instagram-release.js';
@@ -82,7 +83,7 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                         if(!devices.some(d=>d.udid===item.input.deviceUdid))continue;
                         const group=nativeGroup(item.input);
                         if(item.results?.release?.nativeFlowFingerprint!==status.flows[group]?.fingerprint)continue;
-                        for(const platform of ['instagram','facebook','tiktok'] as CommentPlatform[]){
+                        for(const platform of ['instagram','facebook','tiktok','youtube'] as CommentPlatform[]){
                         if(directPausedCommentPlatforms().includes(platform))continue;
                             if(!item.input.targets.some((t:any)=>t.platform===platform)||!status.comments[platform]?.layoutAvailable)continue;
                             const pilot=pilots.some(p=>p.item_id===item.id)||status.flows[group]?.pilotItemId===item.id;
@@ -146,7 +147,9 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
             // One comment job per tick, after due video releases. Never delay an imminent slot.
             {
                 const candidates=await pool.query(`SELECT i.* FROM scheduler.publishing_items i
-                  WHERE i.status IN ('published','needs_review') AND i.input ? 'firstComment' AND i.id=ANY($1::uuid[])
+                  WHERE i.status IN ('published','needs_review') AND i.id=ANY($1::uuid[])
+                  AND (i.input ? 'firstComment' OR (i.input->'targets'->0->>'platform'='youtube' AND EXISTS(SELECT 1 FROM scheduler.publishing_items s
+                    WHERE s.media->>'sha256'=i.media->>'sha256' AND s.input ? 'firstComment')))
                   AND i.updated_at>now()-interval '24 hours'
                   ORDER BY i.updated_at DESC LIMIT 30`,[allowed]);
                 let ran=false;
@@ -163,7 +166,7 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                         if(!device||device.disabled||device.coordinateProfile!=='iphone15promax'||!readiness.get(device.udid))continue;
                         const base=`http://127.0.0.1:${device.wdaLocalPort??8100}`;
                         const commentSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(8*60_000)]);
-                        const driver=platform==='instagram'?new InstagramRelease(base,commentSignal):platform==='facebook'?new FacebookComments(base,commentSignal):new TikTokRelease(base,commentSignal);
+                        const driver=platform==='instagram'?new InstagramRelease(base,commentSignal):platform==='facebook'?new FacebookComments(base,commentSignal):platform==='youtube'?new YouTubeComments(base,commentSignal,undefined):new TikTokRelease(base,commentSignal);
                         const comment=driver.commentOnPost.bind(driver);
                         driver.commentOnPost=async(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly?:boolean)=>{
                             // runPostComment already owns the phone advisory lock here.

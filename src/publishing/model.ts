@@ -69,7 +69,6 @@ export function validatePostingInput(value: unknown): PostingInput {
     }
     if (youtubeRequested && targets.length !== 1) throw new Error('Prepare YouTube as its own calendar item');
     if (!youtubeRequested && p.youtube !== undefined) throw new Error('YouTube details require a YouTube target');
-    if (youtubeRequested && p.firstComment !== undefined) throw new Error('YouTube first comments are not supported yet');
     if (youtubeRequested && /[<>]/.test(p.caption as string)) throw new Error('YouTube descriptions cannot contain angle brackets');
     let instagramRelatedReel: PostingInput['instagramRelatedReel'];
     if (p.instagramRelatedReel !== undefined) {

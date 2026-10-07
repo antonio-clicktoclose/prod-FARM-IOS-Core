@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import type { PostingInput } from './model.js';
 import { ENGAGEMENT_SCHEMA } from './engage-task.js';
 
-export type CommentPlatform = 'instagram' | 'facebook' | 'tiktok';
+export type CommentPlatform = 'instagram' | 'facebook' | 'tiktok' | 'youtube';
 export interface CommentResult { status: string; commentVerified: boolean; pinned: boolean; evidence: string }
 export interface CommentDriver {
     commentOnPost(input: PostingInput, text: string, claim: () => Promise<void>, existingOnly?: boolean): Promise<CommentResult>;
@@ -17,7 +17,10 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
     try {
         await c.query(ENGAGEMENT_SCHEMA);
         const item=(await c.query('SELECT * FROM scheduler.publishing_items WHERE id=$1',[id])).rows[0];
-        if(!item || !['published','needs_review'].includes(item.status) || !item.input.firstComment || !item.input.targets.some((t:any)=>t.platform===platform))return;
+        // A Short reuses the first comment of the same video's other calendar items.
+        const text:string|undefined=item?.input.firstComment??(platform==='youtube'&&item?(await c.query(`SELECT input->>'firstComment' t FROM scheduler.publishing_items
+          WHERE media->>'sha256'=$1 AND input ? 'firstComment' ORDER BY created_at LIMIT 1`,[item.media?.sha256])).rows[0]?.t:undefined);
+        if(!item || !['published','needs_review'].includes(item.status) || !text || !item.input.targets.some((t:any)=>t.platform===platform))return;
         if(!item.results?.release?.receipts?.[platform]?.verified)throw new Error('Native post receipt is required before commenting');
         phone=item.input.deviceUdid;
         locked=(await c.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) locked',[phone])).rows[0].locked;
@@ -35,7 +38,7 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         if(!reserved.rowCount)return;ownsAttempt=true;
         // A comment that may already be up (uncertain) is retried in pin-only mode: the driver never types or posts a second one.
         const existingOnly=prior==='uncertain_review';
-        const result=await driver.commentOnPost(item.input,item.input.firstComment,async()=>{
+        const result=await driver.commentOnPost(item.input,text,async()=>{
             const r=await c.query(`UPDATE scheduler.engagement_actions SET status='claimed',updated_at=now() WHERE claim_key=$1 AND status='preparing' RETURNING claim_key`,[key]);
             if(!r.rowCount)throw new Error('Comment already claimed');claimed=true;
         },existingOnly);

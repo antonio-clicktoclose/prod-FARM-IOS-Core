@@ -32,7 +32,6 @@ test('YouTube rejects missing audience, ambiguous channel, mixed platforms and u
         { youtube: { ...input.youtube, visibility: 'scheduled' } },
         { targets: [...input.targets, { platform: 'tiktok', account: 'synthetic' }] },
         { instagramTrial: true, automaticPromotion: true },
-        { firstComment: 'A comment that is not supported' },
     ]) assert.throws(() => validatePostingInput({ ...input, ...patch }));
 });
 
