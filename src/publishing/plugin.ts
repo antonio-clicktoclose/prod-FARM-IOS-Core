@@ -159,7 +159,9 @@ export function createPublishingPlugin(): PhoneFarmPlugin {
                 const item = await store.get(req.params.id);
                 if (!item || item.status !== 'held' || item.version !== req.body.version) return reply.code(409).send({ error: 'Item changed or is not on hold' });
                 const a=await automation.status();
-                const releaseOptions={nativeYouTubeLayout:phoneControlMode()==='mirroring'&&!!a.flows.youtube.layoutAvailable};
+                // Direct mode: a Short may be armed once its frame-zero cover review exists; the worker still runs native checks.
+                const reviewedShort=phoneControlMode()==='wda'&&item.results?.directYouTubeReview?.coverReviewed===true&&item.results.directYouTubeReview.sourceSha256===item.media.sha256;
+                const releaseOptions={nativeYouTubeLayout:(phoneControlMode()==='mirroring'&&!!a.flows.youtube.layoutAvailable)||reviewedShort};
                 try { assertReleaseTargets(item.input,releaseOptions); } catch(error) { return reply.code(409).send({error:error instanceof Error?error.message:String(error)}); }
                 if (item.input.targets.some((t: {platform:string}) => t.platform === 'tiktok') && !readiness.tiktok.ready) return reply.code(409).send({ error: readiness.tiktok.reason });
                 if (item.cover && !(item.input.youtube&&item.results?.youtubeCover)) return reply.code(409).send({ error: 'Custom covers are not supported; the cover is a frame of the video' });

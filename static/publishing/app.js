@@ -247,7 +247,7 @@ import {contentGroups} from './groups.mjs';
         }
         if (relState === 'running') return { key: 'posting', label: 'Posting', title: 'The phone is posting this now.' };
         if (item.status === 'held' && item.results?.hourlyRecoveryExclusion) return {key:'review',label:'Duplicate check needed',title:'Inspect the existing native post before another upload.',error:'This destination is held for a duplicate check. No automatic retry.'};
-        if (relState === 'armed' && state.caps?.controlMode === 'wda' && !state.caps?.direct?.itemIds?.includes(item.id)) return {key:'held',label:'Held',title:'Saved release exists, but this item is not enabled for the worker.',note:'Not enabled for posting'};
+        if (relState === 'armed' && state.caps?.controlMode === 'wda' && state.caps?.direct?.scope !== 'all_armed' && !state.caps?.direct?.itemIds?.includes(item.id)) return {key:'held',label:'Held',title:'Saved release exists, but this item is not enabled for the worker.',note:'Not enabled for posting'};
         if (relState === 'armed') {
             const mismatch = rel.item_version !== item.version;
             const timeDiff = Number.isFinite(runAt) && Math.abs(Date.parse(rel.run_at) - runAt) > 60_000;

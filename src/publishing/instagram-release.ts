@@ -46,11 +46,13 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         if (!response.ok || result.value?.error) throw new Error('Could not leave the Reel; check the phone');
     }
     protected input?: PostingInput;
+    protected mediaPath?: string;
     evidence: Record<string, unknown> = {};
 
     async preflight(input: PostingInput, mediaValue: unknown): Promise<ReleaseEvidence> {
         const media = mediaValue as ReleaseMedia;
         this.input = input;
+        this.mediaPath = media.path;
         const ig = input.targets.find(t => t.platform === 'instagram');
         if (!ig) throw new Error('This release needs an Instagram target');
         const facebook = input.targets.some(t => t.platform === 'facebook');
@@ -95,6 +97,16 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         const cell=parseGalleryCell(cellLabel);
         if(!cell||cell.seconds!==Math.floor(seconds)||await this.visible('accessibility id','gallery-video-cell-1'))throw Error('Dedicated Instagram album does not contain the exact single clip');
         await this.tapElement('accessibility id','gallery-video-cell-0','Exact imported video');
+        // Instagram can keep multi-select on: the tap only selects the clip and shows a gallery Next bar.
+        // Continue through it only when exactly that one clip is selected.
+        for (const deadline = Date.now() + 15_000; Date.now() < deadline; await this.sleep(500)) {
+            if (await this.visible('accessibility id', 'sundial-right-chevron-next-button')) break;
+            if (!await this.visible('accessibility id', 'reels-gallery-selection-next')) continue;
+            const selected = (await this.request(this.session + '/elements', { using: 'predicate string', value: 'label BEGINSWITH "Selected video thumbnail" AND visible == 1' })).value;
+            if (selected.length !== 1 || await this.visible('accessibility id', 'selection-badge-2')) throw Error('Instagram selected more than the exact clip; nothing was shared');
+            await this.tapElement('accessibility id', 'reels-gallery-selection-next', 'Gallery selection Next');
+            break;
+        }
         await this.tapElement('accessibility id', 'sundial-right-chevron-next-button', 'editor Next', 30_000);
 
         await this.waitFor('accessibility id', 'caption-cell-text-view', 'caption field', 30_000);
@@ -304,6 +316,20 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         if (!r.ok || r.body.value?.error) throw new Error(`Share tap result is uncertain: ${r.body.value?.error ?? r.status}`);
     }
 
+    /** Close known Instagram promo sheets (e.g. Meta Verified) that cover the tab bar. Never taps the promo action. */
+    protected async dismissPromoSheets() {
+        for (let n = 0; n < 3; n++) {
+            const notNow = await this.visible('predicate string', 'label == "Not now" AND visible == 1');
+            if (notNow) { await this.tapElement('predicate string', 'label == "Not now" AND visible == 1', 'Dismiss prompt'); await this.sleep(800); continue; }
+            if (!await this.visible('predicate string', 'label == "Verify your profile" AND visible == 1')) return;
+            await this.assertInputApp();
+            // Verified live Oct 7: a tap on the dimmed area above the sheet closes it; a downward swipe did not.
+            await this.tapPoint(215, 250);
+            await this.sleep(1000);
+        }
+        if (await this.visible('predicate string', 'label == "Verify your profile" AND visible == 1')) throw new Error('An Instagram promo sheet would not close');
+    }
+
     /** Find the new Trial Reel by caption on Profile > Reels > Trial reels, then read its native receipt labels. */
     async verify(timeoutMs = 8 * 60_000): Promise<Record<string, { url?: string; verified: boolean; evidence?: string }>> {
         const input = this.input!;
@@ -312,6 +338,7 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         // One navigation pass. A delayed result stays in review for a later read-only check.
         await this.sleep(Math.min(timeoutMs, 15_000));
         try {
+                await this.dismissPromoSheets();
                 if(!await this.hasExactCaption())await this.openMatchingTrialReel(prefix);
                 if (!await this.hasExactCaption()) throw new Error('Trial Reel full caption does not match');
                 await this.tapElement('accessibility id', 'more-options-button', 'More actions');
@@ -323,7 +350,15 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
                 if (input.targets.some(t => t.platform === 'facebook')) {
                     if (!shared) throw new Error('Instagram has not confirmed linked Facebook sharing yet');
                     try {
-                        receipts.facebook = await new FacebookVerifier(this.base, this.signal).verifyPost(input);
+                        // Confirm Facebook inside this run. Linked sharing can take a minute to appear on the Page,
+                        // so look again up to three times, 60 seconds apart, before leaving it for a later check.
+                        for (let attempt = 0; ; attempt++) {
+                            try { receipts.facebook = await new FacebookVerifier(this.base, this.signal).verifyPost(input, false, this.mediaPath ? { mediaPath: this.mediaPath } : false); break; }
+                            catch (e) {
+                                if (attempt >= 3 || !/Matching Reel not found|Newest Facebook Reel was not reached/.test(e instanceof Error ? e.message : String(e))) throw e;
+                                await this.sleep(60_000);
+                            }
+                        }
                     } finally {
                         // Return to the matching Instagram Reel for the approved pinned comment.
                         await this.start('com.burbn.instagram');

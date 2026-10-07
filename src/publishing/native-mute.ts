@@ -13,10 +13,15 @@ export function controlCenterBlankPoint(xml:string){
  if(!bottom||floor-bottom<60)throw Error('No empty Control Center area to tap; no app playback allowed');
  return{x:Math.round(screenW/2),y:Math.round((bottom+floor)/2)};
 }
+/** Last passing zero-volume check in this worker. Antonio (Oct 7): check at most once an hour, not before every action. */
+let lastZeroVolume=0;
+export const MUTE_RECHECK_MS=60*60_000;
+export function resetMuteCache(){lastZeroVolume=0;}
 /** Caller holds the phone advisory lock. Never changes Mac or meeting audio. */
 export class NativeMuteGuard extends WdaApp {
  private checkedAt=0;
  async prepare(options:{preserveForeground?:boolean}={}){
+  if(Date.now()-lastZeroVolume<MUTE_RECHECK_MS&&(await this.request('/wda/locked')).value===false){this.checkedAt=Date.now();return;}
   if((await this.request('/wda/locked')).value!==false)throw Error('Unlock the iPhone before checking media volume');
   const id=(await this.request('/status')).sessionId;
   if(id)this.session='/session/'+id;
@@ -41,7 +46,7 @@ export class NativeMuteGuard extends WdaApp {
     await this.request(this.session+'/element/'+row+'/value',{value:['0']});
     if(String((await this.request(this.session+'/element/'+row+'/attribute/value')).value)!=='0%')throw Error('Native media volume is not zero');
    }
-   this.checkedAt=Date.now();
+   this.checkedAt=Date.now();lastZeroVolume=this.checkedAt;
   }finally{
    // Tap empty background. The top status area can open Privacy; Home and the home-indicator swipe leave it open.
    const overlay=String((await this.request(this.session+'/source')).value);

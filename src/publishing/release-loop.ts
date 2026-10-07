@@ -6,7 +6,7 @@ import {PreparedTikTokRelease} from './prepared-tiktok.js';
 import {PreparedInstagramRelease} from './prepared-instagram.js';
 import {PreparedYouTubeRelease} from './prepared-youtube.js';
 import {DirectMediaStore} from './direct-media.js';
-import {directReleaseIds,directPausedCommentPlatforms} from './direct-policy.js';
+import {directReleaseIds,directReleaseAllArmed,directPausedCommentPlatforms} from './direct-policy.js';
 import {directVideoDueSoon} from './direct-comments.js';
 import {MirroringCommentDriver,loadNativeCommentFlow} from './mirroring-comments.js';
 import {createMirroringDriver} from './mirroring-driver.js';
@@ -107,7 +107,9 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                 }
                 return;
             }
-            const allowed = directReleaseIds();
+            // All-armed mode also admits the last two days of releases for receipt and comment follow-up.
+            const allowed = directReleaseAllArmed() ? (await pool.query(`SELECT item_id::text id FROM scheduler.publishing_releases
+                WHERE state IN ('armed','running') OR run_at>now()-interval '48 hours'`)).rows.map((r:any)=>r.id as string) : directReleaseIds();
             if (!allowed.length) { await health.tick({controlMode:'wda',state:'blocked',blockers:['Direct posting is paused. No calendar items are selected.']}); return; }
             const devices = (await loadRegisteredDevices()).filter(d => !d.disabled);
             const states = await Promise.all(devices.map(async d =>
@@ -119,7 +121,7 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
             }
             await health.tick({controlMode:'wda',state:'running',blockers:[]});
             const driverFor = async (item: any) => {
-                const releaseSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(15*60000)]);
+                const releaseSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(25*60000)]);
                 const device = (await loadRegisteredDevices()).find(d => d.udid === item.input.deviceUdid);
                 if (!device || device.disabled) throw new Error('Phone is not enabled');
                 if (!readiness.get(device.udid)) throw new Error('Native phone driver is unavailable');
@@ -135,11 +137,11 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
             };
             await store.tick(driverFor, udid => readiness.get(udid) === true, allowed);
             await runDirectStories(pool,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60000)]));
-            // Allow one delayed receipt pass. A failed pass stays held for diagnosis,
-            // rather than reopening the same native screens every five minutes.
+            // Up to three read-only receipt passes, ten minutes apart. Never a second Share.
             const receiptChecks=await pool.query(`SELECT item_id FROM scheduler.publishing_releases
                 WHERE item_id=ANY($1::uuid[]) AND state='needs_review' AND share_claimed_at IS NOT NULL
-                AND updated_at<now()-interval '5 minutes' AND NOT (result ? 'lastReceiptCheck')`,[allowed]);
+                AND updated_at<now()-interval '10 minutes'
+                AND COALESCE((result->>'receiptChecks')::int,CASE WHEN result ? 'lastReceiptCheck' THEN 1 ELSE 0 END)<3`,[allowed]);
             for (const row of receiptChecks.rows) await store.reconcilePending(driverFor, row.item_id);
             // One comment job per tick, after due video releases. Never delay an imminent slot.
             {
@@ -153,7 +155,9 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                     for(const platform of ['instagram','facebook','tiktok'] as CommentPlatform[]){
                         if(directPausedCommentPlatforms().includes(platform))continue;
                         if(!item.input.targets.some((t:any)=>t.platform===platform)||!item.results?.release?.receipts?.[platform]?.verified)continue;
-                        if((await pool.query('SELECT 1 FROM scheduler.engagement_actions WHERE claim_key=$1',[commentKey(platform,item.id)])).rowCount)continue;
+                        // Nothing was posted on failed_before_action, so it may be retried (3 times, 10 minutes apart). Anything else is final.
+                        if((await pool.query(`SELECT 1 FROM scheduler.engagement_actions WHERE claim_key=$1 AND NOT (status='failed_before_action'
+                          AND updated_at<now()-interval '10 minutes' AND COALESCE((result->>'retries')::int,0)<3)`,[commentKey(platform,item.id)])).rowCount)continue;
                         const device=(await loadRegisteredDevices()).find(d=>d.udid===item.input.deviceUdid);
                         if(!device||device.disabled||device.coordinateProfile!=='iphone15promax'||!readiness.get(device.udid))continue;
                         const base=`http://127.0.0.1:${device.wdaLocalPort??8100}`;

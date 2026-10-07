@@ -39,7 +39,7 @@ test('TikTok account transition waits without repeating profile taps',async()=>{
  const driver=new TikTokRelease('http://unused',new AbortController().signal) as any;
  driver.input={targets:[{platform:'tiktok',account:'antoniorevenue'}]};
  const taps:string[]=[];let reads=0;
- driver.depth=async()=>{};driver.sleep=async()=>{};
+ driver.depth=async()=>{};driver.sleep=async()=>{};driver.dismissPrompts=async()=>{};
  driver.tapElement=async(_using:string,name:string)=>{taps.push(name);};
  driver.read=async()=>++reads===1?'':'@antoniorevenue';
  await driver.profile();

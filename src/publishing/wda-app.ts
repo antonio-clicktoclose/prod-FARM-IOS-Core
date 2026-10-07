@@ -2,6 +2,8 @@
 // "stale element reference" and only visible elements count.
 import { requireWdaControl } from '../devices/control-mode.js';
 import { visibleNativeNodes } from './native-xml.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 export const W3C = 'element-6066-11e4-a52e-4f735466cecf';
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -61,6 +63,21 @@ export class WdaApp {
         };
         // Keep the app and any unsent composer intact. Home stops foreground
         // playback without terminating an app or changing its account session.
+        await post('/wda/homescreen',{});
+    }
+    /** Read-only failure evidence: screenshot and screen tree, saved locally. Never sends input; works after a time-out. */
+    async captureFailure(label: string): Promise<string> {
+        const get=async(route:string)=>(await (await fetch(this.base+route,{signal:AbortSignal.timeout(20_000)})).json() as any).value;
+        const dir=path.resolve('.scheduler-data/release-failures'),file=path.join(dir,`${new Date().toISOString().replace(/[:.]/g,'-')}-${label.replace(/[^\w-]/g,'')}`);
+        await mkdir(dir,{recursive:true});
+        await writeFile(file+'.png',Buffer.from(String(await get('/screenshot')),'base64'));
+        await writeFile(file+'.xml',String(await get(this.session?this.session+'/source':'/source')));
+        return path.relative(process.cwd(),file);
+    }
+    /** After a failure before Share or Post: close the app so the next run starts clean. Never signs out. */
+    async resetAfterFailure(): Promise<void> {
+        const post=async(route:string,body:unknown)=>{await fetch(this.base+route,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(15_000)});};
+        if(this.session&&this.expectedBundleId)await post(this.session+'/wda/apps/terminate',{bundleId:this.expectedBundleId});
         await post('/wda/homescreen',{});
     }
     /** Read-only evidence for an attended composer check. Never publishes or saves a draft. */

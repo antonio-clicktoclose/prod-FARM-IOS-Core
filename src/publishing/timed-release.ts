@@ -4,9 +4,10 @@ import { validatePostingInput } from './model.js';
 import { ENGAGEMENT_SCHEMA } from './engage-task.js';
 import { publishingCadence } from './cadence.js';
 
-/** Admit due work within ten minutes; allow a bounded wait behind another app on the phone. */
+/** Admit due work within 45 minutes and start it within 55, so every post in an hourly group gets its turn
+ * behind the others on the one phone, but never runs into the next hour's slot. */
 export function insidePostingWindow(runAt: number, admittedAt: number, now: number) {
-    return admittedAt-runAt<=10*60_000 && now-runAt<=30*60_000;
+    return admittedAt-runAt<=45*60_000 && now-runAt<=55*60_000;
 }
 
 /** Durable, one-shot posting jobs. Only an explicitly armed job can run. */
@@ -82,11 +83,11 @@ export class TimedReleaseStore {
             && readyFor(row.input.deviceUdid)) await this.run(row.item_id,driverFor,admittedAt);
     }
     private async run(id: string, driverFor: (item: any) => Promise<ReleaseDriver>, admittedAt: number) {
-        const c=await this.pool.connect();let locked=false;let phone='';let started=false;let driver: (ReleaseDriver & { leaveVideo?: () => Promise<void> }) | undefined;
+        const c=await this.pool.connect();let locked=false;let phone='';let started=false;let prepared=false;let driver: (ReleaseDriver & { leaveVideo?: () => Promise<void> }) | undefined;
         try {
             const item=(await c.query('SELECT * FROM scheduler.publishing_items WHERE id=$1',[id])).rows[0];
             if(!item) return;
-            phone=item.input.deviceUdid;
+            phone=item.input.deviceUdid;prepared=!!item.results?.preparedNative;
             locked=(await c.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked',[phone])).rows[0].locked;
             if(!locked) return;
             const job=(await c.query(`UPDATE scheduler.publishing_releases SET state='running',updated_at=now()
@@ -131,7 +132,13 @@ export class TimedReleaseStore {
                 }
             }
         } catch(e) {
-            if(started)await c.query(`UPDATE scheduler.publishing_releases SET state='needs_review',result=result||$2::jsonb,updated_at=now() WHERE item_id=$1`,[id,JSON.stringify({error:e instanceof Error?e.message:String(e)})]);
+            // Save what the phone showed, so the cause is visible without guessing. Bounded and read-only.
+            const capture=(driver as {captureFailure?:(label:string)=>Promise<string>}|undefined)?.captureFailure;
+            const evidence=capture?await capture.call(driver,id.slice(0,8)).catch(()=>undefined):undefined;
+            if(started)await c.query(`UPDATE scheduler.publishing_releases SET state='needs_review',result=result||$2::jsonb,updated_at=now() WHERE item_id=$1`,[id,JSON.stringify({error:e instanceof Error?e.message:String(e),...(evidence?{failureEvidence:evidence}:{})})]);
+            // A half-finished composer breaks the next run. Close the app only when nothing was submitted.
+            const claimed=started&&(await c.query('SELECT share_claimed_at FROM scheduler.publishing_releases WHERE item_id=$1',[id])).rows[0]?.share_claimed_at;
+            if(started&&!claimed&&!prepared)await (driver as {resetAfterFailure?:()=>Promise<void>}|undefined)?.resetAfterFailure?.().catch(()=>undefined);
         } finally {
             if(driver?.leaveVideo) {
                 try { await driver.leaveVideo(); }
@@ -170,7 +177,7 @@ export class TimedReleaseStore {
                     await c.query('COMMIT');
                 } catch(e){await c.query('ROLLBACK');throw e;}
             } catch(e) {
-                await c.query("UPDATE scheduler.publishing_releases SET result=result||$2::jsonb,updated_at=now() WHERE item_id=$1 AND state='needs_review'",[row.item_id,JSON.stringify({lastReceiptCheck:new Date().toISOString(),receiptCheckError:e instanceof Error?e.message:String(e),...(e instanceof ReceiptVerificationError?{receipts:e.receipts}:{})})]);
+                await c.query("UPDATE scheduler.publishing_releases SET result=result||$2::jsonb||jsonb_build_object('receiptChecks',COALESCE((result->>'receiptChecks')::int,CASE WHEN result ? 'lastReceiptCheck' THEN 1 ELSE 0 END)+1),updated_at=now() WHERE item_id=$1 AND state='needs_review'",[row.item_id,JSON.stringify({lastReceiptCheck:new Date().toISOString(),receiptCheckError:e instanceof Error?e.message:String(e),...(e instanceof ReceiptVerificationError?{receipts:e.receipts}:{})})]);
                 if(e instanceof ReceiptVerificationError)await c.query(`UPDATE scheduler.publishing_items SET results=jsonb_set(results,'{release}',COALESCE(results->'release','{}'::jsonb)||jsonb_build_object('receipts',$2::jsonb)),updated_at=now() WHERE id=$1`,[row.item_id,JSON.stringify(e.receipts)]);
             } finally {
                 if(driver?.leaveVideo)await driver.leaveVideo().catch(()=>undefined);

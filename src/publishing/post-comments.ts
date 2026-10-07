@@ -24,7 +24,12 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         if(!locked)return;
         // Reserve the attempt before opening an app. Interrupted attempts stay visible for review.
         const reserved=await c.query(`INSERT INTO scheduler.engagement_actions(claim_key,action,post_url,status)
-          VALUES($1,'comment_pin',$2,'preparing') ON CONFLICT DO NOTHING RETURNING claim_key`,[key,'item:'+id]);
+          VALUES($1,'comment_pin',$2,'preparing')
+          ON CONFLICT (claim_key) DO UPDATE SET status='preparing',updated_at=now(),
+            result=jsonb_build_object('retries',COALESCE((scheduler.engagement_actions.result->>'retries')::int,0)+1)
+          WHERE scheduler.engagement_actions.status='failed_before_action' AND scheduler.engagement_actions.updated_at<now()-interval '10 minutes'
+            AND COALESCE((scheduler.engagement_actions.result->>'retries')::int,0)<3
+          RETURNING claim_key`,[key,'item:'+id]);
         if(!reserved.rowCount)return;ownsAttempt=true;
         const result=await driver.commentOnPost(item.input,item.input.firstComment,async()=>{
             const r=await c.query(`UPDATE scheduler.engagement_actions SET status='claimed',updated_at=now() WHERE claim_key=$1 AND status='preparing' RETURNING claim_key`,[key]);

@@ -19,10 +19,16 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
  private async selectAlbum(name:string){
   let last='';
   for(let pass=0;pass<6;pass++){
-   if(!(await this.nodes()).some(n=>n.name==='id.creation.photolibrary.album.cell'))throw Error('Native album list changed');
+   // The list renders after the album-list tap; wait for it once instead of reading too early.
+   if(pass===0)await this.waitFor('predicate string','name == "id.creation.photolibrary.album.cell" AND visible == 1','Native album list',10_000);
+   else if(!(await this.nodes()).some(n=>n.name==='id.creation.photolibrary.album.cell'))throw Error('Native album list changed');
    const rows=(await this.request(this.session+'/elements',{using:'predicate string',value:'type == "XCUIElementTypeCell" AND label == "'+name+'" AND visible == 1'})).value;
    if(rows.length>1)throw Error('YouTube source album is ambiguous');
-   if(rows.length===1){const r=(await this.request(this.session+'/element/'+this.id(rows[0])+'/rect')).value;if(r.y<90||r.y+r.height>850)throw Error('YouTube source album is outside the visible list');await this.tapPoint(r.x+r.width/2,r.y+r.height/2);return;}
+   if(rows.length===1){const r=(await this.request(this.session+'/element/'+this.id(rows[0])+'/rect')).value;
+    if(r.y>=90&&r.y+r.height<=850){await this.tapPoint(r.x+r.width/2,r.y+r.height/2);return;}
+    // Found but near an edge (many PF albums): nudge it toward the middle, then look again. Never tap off-screen.
+    if(pass===5)throw Error('YouTube source album is outside the visible list');
+    await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:r.y<90?300:700,toX:215,toY:r.y<90?600:400,duration:.4});await this.sleep(600);continue;}
    const current=(await this.nodes()).filter(n=>n.type==='XCUIElementTypeCell'&&n.name==='id.creation.photolibrary.album.cell').map(n=>n.label).join('|');
    if(!current||current===last||pass===5)throw Error('YouTube source album was not reached; import was not repeated');last=current;
    await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:780,toX:215,toY:250,duration:.4});await this.sleep(500);
@@ -90,6 +96,12 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
   if(!(await this.nodes()).some(n=>n.name==='@'+input.targets[0]!.account.replace(/^@/,'')))throw Error('YouTube account is not the reviewed channel');
   const imported=await this.imports.ensure(input.deviceUdid,media,this.base,this.signal);
   await this.tapElement('accessibility id','id.ui.pivotbar.FEuploads.button','Create');
+  // A saved draft triggers "Continue your draft video?". Start over keeps that draft and opens a new Short.
+  for(let n=0;n<4;n++){
+   if(await this.visible('accessibility id','id.creation.camera.button.segment_import'))break;
+   if(await this.visible('predicate string','label == "Continue your draft video?" AND visible == 1')){await this.tapElement('predicate string','label == "Start over" AND visible == 1','Start over (draft is kept)');break;}
+   await this.sleep(1000);
+  }
   await this.tapElement('accessibility id','id.creation.camera.button.segment_import','Choose saved video');
   await this.tapElement('accessibility id','id.creation.photolibrary.picker.button.show_album_list','Album list');
   return this.completeGallery(input,media,imported.albumName,probe.durationSeconds);
@@ -147,13 +159,18 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
  }
  protected async completeMetadataDetails(input:PostingInput):Promise<ReleaseEvidence>{
   this.ready=false;this.input=input;
+  // The details screen settles after the thumbnail Done tap; wait for the row instead of reading once.
+  await this.waitFor('predicate string','label == "Visibility, Public" AND visible == 1','Public visibility',10_000).catch(()=>{throw Error('YouTube public visibility needs native review');});
   let nodes=await this.nodes();if(!nodes.some(n=>n.label==='Visibility, Public'))throw Error('YouTube public visibility needs native review');
   if(!nodes.some(n=>n.label==="Audience, No, it's not made for kids")){
    if(!nodes.some(n=>n.name==='id.elements.components.metadata_editor.audience_picker'&&n.label==='Select audience'))throw Error('YouTube audience changed');
    await this.tapElement('predicate string','name == "id.elements.components.metadata_editor.audience_picker" AND label == "Select audience" AND visible == 1','Audience');
    const noKids='name == "id.elements.components.metadata_editor.audience_settings.mfk.2" AND label == "No, it\'s not made for kids" AND visible == 1';
-   if(await this.read('predicate string',noKids,'value','Audience selection')!=='1')await this.tapElement('predicate string',noKids,'Not made for kids');
-   if(await this.read('predicate string',noKids,'value','Saved audience')!=='1')throw Error('YouTube audience did not save');
+   // YouTube nests two elements with this name: the outer one holds value 1 when selected, the inner one holds the label.
+   const selected='name == "id.elements.components.metadata_editor.audience_settings.mfk.2" AND value == "1"';
+   if(!await this.visible('predicate string',selected))await this.tapElement('predicate string',noKids,'Not made for kids');
+   let saved=false;for(let n=0;n<6&&!saved;n++){saved=!!await this.visible('predicate string',selected);if(!saved)await this.sleep(500);}
+   if(!saved)throw Error('YouTube audience did not save');
    await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Back to details');
   }
   await this.tapElement('accessibility id','id.elements.components.metadata_editor.expander.collapsed_button','More details');await this.metadataRow('Description');
@@ -186,7 +203,14 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
    // after the real description Back is visible; it never touches Upload.
    await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Leave description');
   }
-  await this.waitFor('accessibility id','id.metadata_editor.upload_button','Return to source details');await this.related();
+  // Hashtag suggestions can stay open over the details screen. While open, iOS reports the whole screen hidden
+  // (Upload, Related video, title). Tap the title bar by position, which is not a control, to close the list.
+  for(let n=0;n<4&&!await this.visible('accessibility id','id.metadata_editor.upload_button');n++){
+   if(await this.visible('accessibility id','id.elements.hashtag_suggestion')){await this.assertInputApp();await this.tapPoint(215,75);}
+   await this.sleep(900);
+  }
+  await this.waitFor('accessibility id','id.metadata_editor.upload_button','Return to source details',5_000);
+  await this.related();
   return this.completeAttributes(input);
  }
  protected async completeAttributes(input:PostingInput):Promise<ReleaseEvidence>{
@@ -196,6 +220,7 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
    await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:250,toX:215,toY:780,duration:.4});await this.sleep(500);
   }
   if(!(await this.nodes()).some(n=>n.name==='id.elements.components.identity_chip_component'&&n.label.includes('@'+input.targets[0]!.account.replace(/^@/,''))))throw Error('YouTube upload account changed');
+  await this.waitFor('accessibility id','id.metadata_editor.upload_button','Upload button on screen',10_000);
   this.ready=true;return{exactMedia:true,videoFrameCover:true,caption:true,account:true,automaticPromotion:false,linkedFacebook:false,youtubeRelatedVideo:{id:reviewedLongForm.id,format:'long_form',verified:true}};
  }
 }

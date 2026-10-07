@@ -1,3 +1,4 @@
+import { visibleNativeNodes } from './native-xml.js';
 import type {DirectMediaStore} from './direct-media.js';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -18,6 +19,20 @@ export function matchesTikTokPost(label: string, caption: string): boolean {
 /** Native TikTok release. Each item owns one atomic Post claim. */
 export class TikTokRelease extends WdaApp implements ReleaseDriver {
     constructor(base:string,signal:AbortSignal,private imports?:DirectMediaStore){super(base,signal);}
+    /** Close TikTok account prompts (e.g. "Add email", seen Oct 7) that cover the profile. Never fills them in. */
+    protected async dismissPrompts() {
+        for (let n = 0; n < 3; n++) {
+            const later = await this.visible('predicate string', '(label == "Not now" OR label == "Maybe later") AND visible == 1');
+            if (later) { await this.tapElement('predicate string', '(label == "Not now" OR label == "Maybe later") AND visible == 1', 'Dismiss TikTok prompt'); await this.sleep(800); continue; }
+            if (!await this.visible('predicate string', 'label == "Add email" AND visible == 1')) return;
+            const close = visibleNativeNodes(String((await this.request(this.session + '/source')).value))
+                .filter(n => n.type === 'XCUIElementTypeButton' && !n.name && !n.label && n.x >= 360 && n.y >= 150 && n.y <= 420 && n.width <= 60 && n.height <= 60);
+            if (close.length !== 1) throw new Error('TikTok Add email prompt has no single close button');
+            await this.assertInputApp();
+            await this.tapPoint(close[0]!.x + close[0]!.width / 2, close[0]!.y + close[0]!.height / 2);
+            await this.sleep(1000);
+        }
+    }
     protected input?: PostingInput;
     protected prepared = false;
     protected override async swipeUp() {
@@ -35,6 +50,7 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         await this.depth(12);
         await this.tapElement('accessibility id','a11y_vo_profile','TikTok Profile',30_000);
         await this.depth(50);
+        await this.dismissPrompts();
         let account='';
         const expected=this.input!.targets[0].account.replace(/^@/,'');
         const deadline=Date.now()+5000;
@@ -167,7 +183,16 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
             percent=parseFloat(await this.read('accessibility id','Drag to select','value','Opening cover frame'));
         }
         if(percent!==0)throw new Error('TikTok cover must use the reviewed opening frame');
-        await this.tapElement('accessibility id','Save','Save cover');
+        // TikTok can show more than one "Save" (Oct 7: a wrong match opened Messages through a send-to contact).
+        // Tap only the cover editor's own Save in the top bar; anything else stops before a tap.
+        const saves=[];
+        for(const row of (await this.request(this.session+'/elements',{using:'accessibility id',value:'Save'})).value??[]){
+            const id=this.id(row),r=(await this.request(this.session+'/element/'+id+'/rect')).value;
+            if((await this.request(this.session+'/element/'+id+'/displayed')).value===true&&r.y>=40&&r.y+r.height<=140&&r.x>=250)saves.push(r);
+        }
+        if(saves.length!==1)throw new Error('TikTok cover Save is missing or ambiguous; nothing was tapped');
+        await this.assertInputApp();
+        await this.tapPoint(saves[0].x+saves[0].width/2,saves[0].y+saves[0].height/2);await this.sleep(800);
         // Returning through the editor closes TikTok's caption keyboard reliably.
         await this.tapElement('accessibility id','(publishPageBackButton)','Back to editor');
         await this.tapElement('accessibility id','(editPageNextButton)','Return to composer');
