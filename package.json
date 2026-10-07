@@ -61,6 +61,7 @@
     "pg": "^8.23.0",
     "pg-boss": "^12.27.0",
     "sharp": "^0.35.3",
+    "slack-block-builder": "^2.8.0",
     "webdriverio": "9.31.3"
   },
   "devDependencies": {
