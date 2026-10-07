@@ -24,7 +24,7 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         if(!item.results?.release?.receipts?.[platform]?.verified)throw new Error('Native post receipt is required before commenting');
         phone=item.input.deviceUdid;
         locked=(await c.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) locked',[phone])).rows[0].locked;
-        if(!locked)return;
+        if(!locked){console.log(new Date().toISOString(),'comment job waits: phone busy',key);return;}
         const prior=(await c.query('SELECT status FROM scheduler.engagement_actions WHERE claim_key=$1',[key])).rows[0]?.status;
         // Reserve the attempt before opening an app. Interrupted attempts stay visible for review.
         const reserved=await c.query(`INSERT INTO scheduler.engagement_actions(claim_key,action,post_url,status)
@@ -35,7 +35,7 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
             AND scheduler.engagement_actions.updated_at<now()-interval '10 minutes'
             AND COALESCE((scheduler.engagement_actions.result->>'retries')::int,0)<3
           RETURNING claim_key`,[key,'item:'+id,platform!=='tiktok']);
-        if(!reserved.rowCount)return;ownsAttempt=true;
+        if(!reserved.rowCount)return;ownsAttempt=true;console.log(new Date().toISOString(),'comment job starts',key);
         // A comment that may already be up (uncertain) is retried in pin-only mode: the driver never types or posts a second one.
         const existingOnly=prior==='uncertain_review';
         const result=await driver.commentOnPost(item.input,text,async()=>{
@@ -45,6 +45,8 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         await c.query(`UPDATE scheduler.engagement_actions SET status='done',result=$2,updated_at=now() WHERE claim_key=$1`,[key,JSON.stringify(result)]);
         await c.query(`UPDATE scheduler.publishing_items SET results=jsonb_set(results,ARRAY[$2],$3::jsonb),updated_at=now() WHERE id=$1`,[id,platform+'Comment',JSON.stringify(result)]);
     } catch(error) {
+        // Errors before the job is reserved used to vanish; log them so a skipped comment shows why.
+        if(!ownsAttempt)console.error(new Date().toISOString(),'comment job skipped',key,error instanceof Error?error.message:String(error));
         if(ownsAttempt)await c.query(`UPDATE scheduler.engagement_actions SET status=$2,result=COALESCE(result,'{}'::jsonb)||$3::jsonb,updated_at=now() WHERE claim_key=$1`,[key,claimed?'uncertain_review':'failed_before_action',JSON.stringify({error:error instanceof Error?error.message:String(error)})]);
     } finally {
         if(ownsAttempt)await driver.leaveVideo().catch(()=>undefined);

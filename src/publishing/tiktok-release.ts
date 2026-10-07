@@ -166,11 +166,12 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         if(rect.y<=115 || rect.y+rect.height>=830)throw new Error('Dedicated upload album is outside the visible list');
     }
     /** A caption ending in hashtags leaves TikTok's full-screen editor and suggestion list open, which hides Edit cover
-     * (Oct 7 14:25). Hide the keyboard; only while the keyboard is still up, its back arrow closes the editor, not the composer. */
+     * (Oct 7 14:25). Never tap its back arrow: it leaves the composer (Oct 7 15:24). Hide the keyboard, then swipe the
+     * suggestion list down, which closes the keyboard and the editor. */
     private async closeCaptionEditor() {
-        for(let attempt=0;attempt<2&&await this.visible('class name','XCUIElementTypeKeyboard');attempt++){
+        for(let attempt=0;attempt<3&&await this.visible('class name','XCUIElementTypeKeyboard');attempt++){
             if(attempt===0)await this.raw(this.session+'/wda/keyboard/dismiss',{}).catch(()=>undefined);
-            else await this.tapElement('accessibility id','(publishPageBackButton)','Close caption editor');
+            else{await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:330,toX:215,toY:620,duration:0.3});}
             await this.sleep(1000);
         }
         if(await this.visible('class name','XCUIElementTypeKeyboard'))throw new Error('TikTok caption editor did not close');
