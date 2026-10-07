@@ -1,4 +1,18 @@
 import {WdaApp} from './wda-app.js';
+/** Empty Control Center background below every visible control. On iOS 27 a tap there closes it; Home and edge swipes did not. */
+export function controlCenterBlankPoint(xml:string){
+ let bottom=0,screenW=430,screenH=932;
+ for(const m of xml.matchAll(/<XCUIElementType\w+\b[^>]*>/g)){
+  const a=Object.fromEntries([...m[0].matchAll(/(\w+)="([^"]*)"/g)].map(v=>[v[1],v[2]]));
+  const y=Number(a.y),w=Number(a.width),h=Number(a.height);
+  if(a.type==='XCUIElementTypeApplication'&&w>0&&h>0){screenW=w;screenH=h;}
+  if(a.visible!=='true'||!Number.isFinite(y+w+h)||w>=screenW*0.9)continue;
+  bottom=Math.max(bottom,y+h);
+ }
+ const floor=screenH-32;// keep clear of the home indicator
+ if(!bottom||floor-bottom<60)throw Error('No empty Control Center area to tap; no app playback allowed');
+ return{x:Math.round(screenW/2),y:Math.round((bottom+floor)/2)};
+}
 /** Caller holds the phone advisory lock. Never changes Mac or meeting audio. */
 export class NativeMuteGuard extends WdaApp {
  private checkedAt=0;
@@ -29,10 +43,11 @@ export class NativeMuteGuard extends WdaApp {
    }
    this.checkedAt=Date.now();
   }finally{
-   // Dismiss from the home indicator. The top status area can open Privacy.
+   // Tap empty background. The top status area can open Privacy; Home and the home-indicator swipe leave it open.
    const overlay=String((await this.request(this.session+'/source')).value);
    if(overlay.includes('Add Controls')&&overlay.includes('Power')){
-    await this.request('/wda/absolute-actions',{actions:[{type:'pointer',id:'mute-dismiss',parameters:{pointerType:'touch'},actions:[{type:'pointerMove',duration:0,x:215,y:925,origin:'viewport'},{type:'pointerDown',button:0},{type:'pointerMove',duration:350,x:215,y:500,origin:'viewport'},{type:'pointerUp',button:0}]}]});
+    const blank=controlCenterBlankPoint(overlay);
+    await this.request('/wda/absolute-actions',{actions:[{type:'pointer',id:'mute-dismiss',parameters:{pointerType:'touch'},actions:[{type:'pointerMove',duration:0,x:blank.x,y:blank.y,origin:'viewport'},{type:'pointerDown',button:0},{type:'pause',duration:80},{type:'pointerUp',button:0}]}]});
     await this.request(this.session+'/appium/settings',{settings:{defaultActiveApplication:'auto'}});
     let closed=false;for(let n=0;n<3;n++){await this.sleep(800);if(!String((await this.request(this.session+'/source')).value).includes('Add Controls')){closed=true;break;}}
     if(!closed)throw Error('Control Center did not close; no app playback allowed');
