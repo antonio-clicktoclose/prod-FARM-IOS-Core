@@ -1,0 +1,508 @@
+import type {DirectMediaStore} from './direct-media.js';
+import { exactOwnReelCaption, ownReelViewer, visibleNativeNodes } from './native-xml.js';
+import type {CommentResult} from './post-comments.js';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import type { PostingInput } from './model.js';
+import {ReceiptVerificationError, type ReleaseDriver, type ReleaseEvidence} from './release-policy.js';
+import { FacebookVerifier } from './facebook-verify.js';
+import { WdaApp, parseGalleryCell } from './wda-app.js';
+import {locateRelatedCover} from './instagram-related.js';
+
+const run = promisify(execFile);
+const FACEBOOK_ON = 'Antonio Revenue, Facebook · Public, On';
+const q = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+export interface ReleaseMedia { path: string; name: string; mimeType: string; sha256: string }
+
+/**
+ * Posts one Instagram Trial Reel (with native linked Facebook sharing when requested) on the iPhone 15 Pro Max.
+ * Mapped live on 2026-09-29. The only public action is `shareOnce`, which taps Share exactly once; everything before
+ * it is preflight evidence and everything after it is read-only verification plus the first comment and pin.
+ */
+export class InstagramRelease extends WdaApp implements ReleaseDriver {
+    constructor(base:string,signal:AbortSignal,private imports?:DirectMediaStore){super(base,signal);}
+    protected override async tapElement(using:string,value:string,what:string,ms=20_000) {
+        if(using!=='accessibility id'||!['profile-tab','back-button','BackButton','more-options-button','Edit cover'].includes(value))
+            return super.tapElement(using,value,what,ms);
+        const r=value==='Edit cover'
+            ? await this.rect('predicate string','type == "XCUIElementTypeButton" AND name == "Edit cover" AND visible == 1',what)
+            : await this.rect(using,value,what);
+        if(r.x<0||r.y<45||r.x+r.width>431||r.y+r.height>925)throw Error('Instagram navigation control is outside the screen');
+        await this.tapPoint(r.x+r.width/2,r.y+r.height/2);
+        await this.sleep(1000);
+    }
+
+    /** Run after receipt and comment checks, including failures. Does not change the post. */
+    async leaveVideo(): Promise<void> {
+        // Cleanup must still run when the posting signal was cancelled.
+        const response = await fetch(this.base + '/wda/homescreen', {
+            method: 'POST', headers: {'content-type':'application/json'}, body:'{}',
+            signal: AbortSignal.timeout(15_000),
+        });
+        const result = await response.json() as any;
+        if (!response.ok || result.value?.error) throw new Error('Could not leave the Reel; check the phone');
+    }
+    protected input?: PostingInput;
+    evidence: Record<string, unknown> = {};
+
+    async preflight(input: PostingInput, mediaValue: unknown): Promise<ReleaseEvidence> {
+        const media = mediaValue as ReleaseMedia;
+        this.input = input;
+        const ig = input.targets.find(t => t.platform === 'instagram');
+        if (!ig) throw new Error('This release needs an Instagram target');
+        const facebook = input.targets.some(t => t.platform === 'facebook');
+        if (facebook && input.facebookMode !== 'linked_from_instagram') throw new Error('Only native linked Facebook sharing is supported');
+
+        const bytes = await readFile(media.path);
+        if (createHash('sha256').update(bytes).digest('hex') !== media.sha256) throw new Error('Video changed since the calendar item was saved');
+        const seconds = Number((await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', media.path])).stdout.trim());
+        if (!Number.isFinite(seconds) || seconds <= 0) throw new Error('Could not read the video length');
+
+        await this.start('com.burbn.instagram');
+        await this.requireProfileForNewComposer();
+        await this.tapElement('accessibility id', 'profile-tab', 'Profile tab');
+        const account = (await this.read('accessibility id', 'user-switch-title-button', 'label', 'active account')).replace(/^@/, '');
+        if (account !== ig.account.replace(/^@/, '')) throw new Error(`Active Instagram account is ${account}, expected ${ig.account}`);
+
+        if(!this.imports)throw Error('A persistent native import journal is required');
+        const imported={value:await this.imports.ensure(input.deviceUdid,media,this.base,this.signal)};
+        if (!imported.value?.localIdentifier) throw new Error('The phone did not return a media import ID');
+
+        await this.tapElement('accessibility id', 'profile-add-button', 'Create button');
+        await this.tapElement('accessibility id', 'creation-reel', 'Create Reel');
+        // Never overwrite a draft that is not bound to this source.
+        await this.requireNoDraftPrompt();
+        return this.completeGallery(input,media,imported.value,seconds,account);
+    }
+
+    /** Resume the inspected empty gallery without importing or opening Create again. */
+    async completeGallery(input:PostingInput,media:ReleaseMedia,imported:{localIdentifier:string;albumName:string},seconds:number,account:string):Promise<ReleaseEvidence>{
+        this.input=input;
+        const facebook=input.targets.some(t=>t.platform==='facebook');
+        if(createHash('sha256').update(await readFile(media.path)).digest('hex')!==media.sha256
+            ||imported.albumName!=='PF-'+media.sha256.slice(0,12)
+            ||account!==input.targets.find(t=>t.platform==='instagram')?.account.replace(/^@/,''))throw Error('Gallery source or account changed');
+        await this.waitFor('accessibility id','gallery-header-title','New Reel gallery');
+        if(await this.read('accessibility id','gallery-header-title','label','Gallery title')!=='New reel')throw Error('Unknown gallery');
+        // Single-select mode: tapping one cell opens the editor with exactly that clip.
+        const multi = await this.visible('accessibility id', 'multi-select');
+        if (multi && (await this.read('accessibility id', 'multi-select', 'label', 'selection mode')) === 'Cancel') await this.tapElement('accessibility id', 'multi-select', 'single-select mode');
+        await this.selectUploadAlbum(imported.albumName);
+        const cellLabel = await this.read('accessibility id','gallery-video-cell-0','label','Exact album video');
+        const cell=parseGalleryCell(cellLabel);
+        if(!cell||cell.seconds!==Math.floor(seconds)||await this.visible('accessibility id','gallery-video-cell-1'))throw Error('Dedicated Instagram album does not contain the exact single clip');
+        await this.tapElement('accessibility id','gallery-video-cell-0','Exact imported video');
+        await this.tapElement('accessibility id', 'sundial-right-chevron-next-button', 'editor Next', 30_000);
+
+        await this.waitFor('accessibility id', 'caption-cell-text-view', 'caption field', 30_000);
+        const captionId = await this.waitFor('accessibility id', 'caption-cell-text-view', 'caption field');
+        await this.request(`${this.session}/element/${captionId}/value`, { value: [input.caption] });
+        if ((await this.read('accessibility id', 'caption-cell-text-view', 'value', 'caption')) !== input.caption) throw new Error('Caption readback does not match');
+        await this.tapElement('accessibility id', 'OK', 'caption OK');
+        if ((await this.read('accessibility id', 'caption-cell-text-view', 'value', 'caption')) !== input.caption) throw new Error('Caption changed when the editor closed');
+
+        return this.completeSettings(input,media,imported,seconds,account,cellLabel);
+    }
+
+    async completeSettings(input:PostingInput,media:ReleaseMedia,imported:{localIdentifier:string;albumName:string},seconds:number,account:string,cellLabel:string):Promise<ReleaseEvidence>{
+        this.input=input;
+        const facebook=input.targets.some(t=>t.platform==='facebook');
+        if(createHash('sha256').update(await readFile(media.path)).digest('hex')!==media.sha256||imported.albumName!=='PF-'+media.sha256.slice(0,12))throw Error('Prepared Instagram source changed');
+        const relatedReel = input.instagramRelatedReel ? await this.selectRelatedReel(input.instagramRelatedReel) : undefined;
+        for(let n=0;n<2&&!await this.visible('accessibility id','caption-cell-text-view');n++){
+            await this.assertInputApp();
+            await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:300,toX:215,toY:780,duration:0.3});
+        }
+        if(await this.read('accessibility id','caption-cell-text-view','value','Prepared caption')!==input.caption)throw Error('Prepared Instagram caption changed');
+        const cover = await this.reviewOpeningCover();
+
+        // Locate the row before changing it; Instagram can shift the composer layout.
+        for (let i = 0; i < 4 && !(await this.visible('predicate string', 'type == "XCUIElementTypeSwitch" AND name CONTAINS ", Add AI Label," AND visible == 1')); i++) {
+            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 215, fromY: 780, toX: 215, toY: 280, duration: 0.15 });
+        }
+        await this.ensureSwitch('Add AI Label', false, async () => {
+            const row = await this.rect('predicate string', 'type == "XCUIElementTypeSwitch" AND name CONTAINS ", Add AI Label," AND visible == 1', 'AI label row');
+            await this.tapPoint(382, row.y + 29);   // the toggle sits at the row's right edge; the row itself ignores taps
+        });
+        await this.ensureSwitch('Trial', input.instagramTrial, () => this.tapElement('accessibility id', 'trial-switch', 'Trial switch'));
+        let automaticPromotion = false;
+        if (input.instagramTrial) automaticPromotion = await this.ensureAutomaticPromotion();
+
+        await this.tapElement('predicate string', 'type == "XCUIElementTypeCell" AND name BEGINSWITH "Also share on…," AND visible == 1', 'Also share on');
+        const facebookOn = !!(await this.visible('predicate string', `label == "${FACEBOOK_ON}" AND visible == 1`));
+        await this.tapElement('accessibility id', 'BackButton', 'back to composer');
+        if (facebook !== facebookOn) throw new Error(facebook ? 'Antonio Revenue Facebook sharing is not on' : 'Facebook sharing is on but this item has no Facebook target');
+
+        const shareLabel = await this.read('accessibility id', 'share-sheet-share-button', 'label', 'Share button');
+        if (shareLabel !== 'Share') throw new Error(`Unexpected final button: ${shareLabel}`);
+        this.evidence = { account, importedMediaId: imported.localIdentifier, galleryCell: cellLabel, seconds, cover, aiLabel: false, facebookOn, checkedAt: new Date().toISOString() };
+        return { exactMedia: true, videoFrameCover: true, caption: true, account: true, automaticPromotion, linkedFacebook: facebookOn, ...(relatedReel?{relatedReel}:{}) };
+    }
+
+    /** Select the source-specific album; never infer the source from newest media. */
+    protected async selectUploadAlbum(albumName:string){
+        if(!/^PF-[a-f0-9]{12}$/.test(albumName))throw Error('Exact Instagram upload album is missing');
+        if(!await this.visible('accessibility id','menu-item-All albums'))await this.tapElement('predicate string','type == "XCUIElementTypeCell" AND name BEGINSWITH "Gallery Selection," AND visible == 1','Upload album menu');
+        await this.tapElement('accessibility id','menu-item-All albums','All source albums');
+        const rows=(await this.request(this.session+'/elements',{using:'accessibility id',value:albumName})).value;
+        if(rows.length!==1)throw Error('Exact Instagram album is missing or ambiguous; no fallback to Recents');
+        const id=this.id(rows[0]);
+        if(!(await this.request(this.session+'/element/'+id+'/displayed')).value)await this.request(this.session+'/wda/element/'+id+'/scrollTo',{},30000);
+        const r=(await this.request(this.session+'/element/'+id+'/rect')).value;
+        if(r.y<100||r.y+r.height>880||r.x<0||r.x+r.width>430)throw Error('Instagram source album is outside the visible list');
+        await this.tapPoint(r.x+r.width/2,r.y+r.height/2);
+        await this.waitFor('predicate string','type == "XCUIElementTypeCell" AND name == "Gallery Selection, '+albumName+' selected" AND visible == 1','Selected source album');
+    }
+
+    protected async selectRelatedReel(related:NonNullable<PostingInput['instagramRelatedReel']>) {
+        if(!await this.visible('accessibility id','Select a reel')){
+            if(!await this.visible('accessibility id','share-sheet-share-button'))throw Error('Instagram composer is no longer open; no scrolling sent');
+            for(let n=0;n<3&&!(await this.visible('accessibility id','Link a reel'));n++)await this.swipeUp();
+            await this.tapElement('accessibility id','Link a reel','Related Reel');
+        }
+        await this.waitFor('accessibility id','Select a reel','Owned Reel picker');
+        // The heading appears before the grid finishes loading. Re-read once,
+        // without touching the grid, if its cover is not yet identifiable.
+        let found;
+        try{found=await locateRelatedCover(Buffer.from((await this.request('/screenshot')).value,'base64'),related);}
+        catch{await this.sleep(1200);found=await locateRelatedCover(Buffer.from((await this.request('/screenshot')).value,'base64'),related);}
+        await this.tapPoint(found.x,found.y);
+        await this.waitFor('accessibility id','Edit linked reel','Link title');
+        const rows=(await this.request(this.session+'/elements',{using:'class name',value:'XCUIElementTypeTextField'})).value;
+        if(rows.length!==1)throw Error('Related Reel title is ambiguous');
+        await this.assertInputApp();
+        await this.request(this.session+'/element/'+this.id(rows[0])+'/value',{value:[related.label]});
+        await this.tapElement('accessibility id','OK','Save related Reel');
+        await this.tapElement('accessibility id','Link a reel','Read saved related Reel');
+        if(await this.read('class name','XCUIElementTypeTextField','value','Saved link title')!==related.label)throw Error('Related Reel label did not save');
+        await this.tapElement('accessibility id','OK','Return to composer');
+        return {url:related.url,label:related.label,verified:true};
+    }
+
+    protected async verifyRelatedReel(receipts:Record<string,{verified:boolean;evidence:string}>) {
+        const related=this.input?.instagramRelatedReel;
+        if(!related)return;
+        const visible=visibleNativeNodes((await this.request(this.session+'/source')).value);
+        if(!visible.some(n=>n.name==='organic-cta-button')) {
+            // The owner Trial viewer can omit the Watch button. Read the saved
+            // link setting without changing it and keep that limit in the receipt.
+            await this.tapElement('accessibility id','more-options-button','Read saved related Reel');
+            await this.tapElement('predicate string','label == "Edit linked reel" AND visible == 1','Saved related Reel');
+            const label=await this.read('class name','XCUIElementTypeTextField','value','Saved related Reel title');
+            await this.tapElement('accessibility id','Cancel','Leave saved link unchanged');
+            if(label!==related.label)throw Error('Published saved related Reel label does not match');
+            receipts.instagram!.evidence+='; saved related-Reel title matched '+related.label+'; Watch button visibility was not verified in the owner Trial view';
+            return;
+        }
+        if(await this.read('accessibility id','organic-cta-button','label','Published related Reel')!=='Watch · '+related.label)throw Error('Published related Reel label does not match');
+        await this.tapElement('accessibility id','organic-cta-button','Open published related Reel');
+        await this.sleep(1200);
+        if(!exactOwnReelCaption((await this.request(this.session+'/source')).value,related.caption,this.input!.targets.find(t=>t.platform==='instagram')!.account))throw Error('Published related Reel opens the wrong post');
+        await this.tapElement('accessibility id','back-button','Return to published Reel');
+        receipts.instagram!.evidence+='; Watch link opened the exact owned related Reel';
+    }
+
+    protected async requireProfileForNewComposer() {
+        for (const name of ['caption-cell-text-view', 'camera-discard-draft', 'discard-reel-preview', 'gallery-close-button', 'Continue editing your draft?']) {
+            if (await this.visible('accessibility id', name))
+                throw new Error('Instagram has an existing draft or gallery; it was left unchanged');
+        }
+        // The last verified pin can leave an empty comment drawer open.
+        // Never dismiss typed text or an unsent Reel draft.
+        if(await this.visible('accessibility id','text-view')) {
+            if(await this.read('accessibility id','text-view','label','Comment editor')!=='Add a comment'
+                ||(await this.read('accessibility id','text-view','value','Comment text')).trim())
+                throw Error('Instagram has unsent comment text; it was left unchanged');
+            const dismiss=visibleNativeNodes((await this.request(this.session+'/source')).value)
+                .filter(n=>n.type==='XCUIElementTypeButton'&&n.label==='Dismiss');
+            if(dismiss.length!==1||dismiss[0]!.y<100||dismiss[0]!.y>800)throw Error('Comment drawer is unknown; it was left unchanged');
+            const r=dismiss[0]!;await this.tapPoint(r.x+r.width/2,r.y+r.height/2);await this.sleep(700);
+        }
+        if(await this.visible('accessibility id','back-button')) {
+            const account=this.input?.targets.find(t=>t.platform==='instagram')?.account;
+            if(account&&ownReelViewer((await this.request(this.session+'/source')).value,account))
+                await this.tapElement('accessibility id','back-button','Leave owned Reel');
+        }
+        if(await this.visible('accessibility id','BackButton')&&await this.visible('accessibility id','Trial reels'))
+            await this.tapElement('accessibility id','BackButton','Leave Trial grid');
+        if (!(await this.visible('accessibility id', 'profile-tab')))
+            throw new Error('Instagram has an existing draft or an unknown screen; it was left unchanged');
+    }
+
+    protected async requireNoDraftPrompt() {
+        for (const name of ['camera-discard-draft', 'Continue editing your draft?']) {
+            if (await this.visible('accessibility id', name))
+                throw new Error('An existing Instagram draft needs review; it was not discarded');
+        }
+    }
+
+    protected async reviewOpeningCover() {
+        await this.tapElement('accessibility id', 'Edit cover', 'Edit cover');
+        let frame = await this.rect('accessibility id', 'Selected frame', 'Selected cover frame');
+        const mapped = (r:typeof frame) => r.x >= 0 && r.x + r.width <= 430
+            && r.width >= 40 && r.width <= 65 && r.y >= 700 && r.y + r.height <= 850
+            && r.height >= 60 && r.height <= 90;
+        if (!mapped(frame)) throw new Error('Instagram cover controls moved; review them before posting');
+        const selectionMoved = frame.x > 12;
+        if (selectionMoved) {
+            await this.assertInputApp();
+            await this.request(this.session + '/wda/dragfromtoforduration', {
+                fromX:frame.x + frame.width / 2, fromY:frame.y + frame.height / 2,
+                toX:1, toY:frame.y + frame.height / 2, duration:0.5,
+            });
+            frame = await this.rect('accessibility id', 'Selected frame', 'Opening cover frame');
+        }
+        if (!mapped(frame) || frame.x > 12)
+            throw new Error('Instagram is not using the opening cover frame; review it before posting');
+        await this.tapElement('accessibility id', 'done-button', 'Save opening cover');
+        return {openingFrame:true,selectedFrame:frame,selectionMoved};
+    }
+
+    private async switchOn(prefix: string): Promise<boolean> {
+        const label = await this.read('predicate string', `type == "XCUIElementTypeSwitch" AND name CONTAINS ", ${prefix}," AND visible == 1`, 'name', `${prefix} switch`);
+        if (label.startsWith('Checked, ')) return true;
+        if (label.startsWith('Not checked, ')) return false;
+        throw new Error(`${prefix} state cannot be read`);
+    }
+    private async ensureSwitch(prefix: string, wanted: boolean, toggle: () => Promise<void>) {
+        if (await this.switchOn(prefix) !== wanted) { await toggle(); await this.sleep(1200); }
+        if (await this.switchOn(prefix) !== wanted) throw new Error(`${prefix} did not turn ${wanted ? 'on' : 'off'}`);
+    }
+    private async ensureAutomaticPromotion(): Promise<boolean> {
+        const row = await this.rect('predicate string', 'type == "XCUIElementTypeSwitch" AND name BEGINSWITH "Checked, Trial," AND visible == 1', 'Trial row');
+        if (row.x !== 0 || row.width !== 430 || row.height < 100 || row.y < 100 || row.y > 700) throw new Error('Trial settings link needs calibration for this layout');
+        await this.tapPoint(200, row.y + row.height - 21);   // the inline "trial settings" link has no accessibility ID
+        await this.waitFor('predicate string', 'label == "Trial settings" AND visible == 1', 'Trial settings');
+        const state = async () => (await this.read('predicate string', 'type == "XCUIElementTypeSwitch" AND name ENDSWITH "Share to everyone automatically" AND visible == 1', 'name', 'automatic promotion')).startsWith('Checked, ');
+        if (!await state()) { await this.tapElement('accessibility id', 'igds-switch', 'automatic promotion switch'); await this.sleep(1000); }
+        const on = await state();
+        await this.tapElement('accessibility id', 'Done', 'Trial settings Done');
+        if (!on) throw new Error('Automatic promotion did not turn on');
+        return true;
+    }
+
+    /** Leave the composer without posting or saving a draft (dry runs and failed preflights). */
+    async abandon(): Promise<void> {
+        for (let step = 0; step < 6; step++) {
+            if (await this.visible('accessibility id', 'camera-discard-draft')) { await this.tapElement('accessibility id', 'camera-discard-draft', 'Start over'); continue; }
+            if (await this.visible('accessibility id', 'discard-reel-preview')) { await this.tapElement('accessibility id', 'discard-reel-preview', 'discard reel'); await this.sleep(1200); continue; }
+            if (await this.visible('accessibility id', 'gallery-close-button')) { await this.tapElement('accessibility id', 'gallery-close-button', 'close gallery'); await this.sleep(1200); continue; }
+            if (await this.visible('accessibility id', 'Done')) { await this.tapElement('accessibility id', 'Done', 'Done'); continue; }
+            if (await this.visible('accessibility id', 'BackButton')) { await this.tapElement('accessibility id', 'BackButton', 'Back'); await this.sleep(1200); continue; }
+            return;
+        }
+    }
+
+    async shareOnce(): Promise<void> {
+        // Exactly one tap. Callers claim the release before this and never call it twice.
+        const id = await this.waitFor('accessibility id', 'share-sheet-share-button', 'Share button');
+        await this.assertInputApp();
+        const r = await this.raw(`${this.session}/element/${id}/click`, {});
+        if (!r.ok || r.body.value?.error) throw new Error(`Share tap result is uncertain: ${r.body.value?.error ?? r.status}`);
+    }
+
+    /** Find the new Trial Reel by caption on Profile > Reels > Trial reels, then read its native receipt labels. */
+    async verify(timeoutMs = 8 * 60_000): Promise<Record<string, { url?: string; verified: boolean; evidence?: string }>> {
+        const input = this.input!;
+        const prefix = input.caption.trim().split('\n')[0].slice(0, 30).trim();
+        const receipts:Record<string,{verified:boolean;evidence:string}>={};
+        // One navigation pass. A delayed result stays in review for a later read-only check.
+        await this.sleep(Math.min(timeoutMs, 15_000));
+        try {
+                if(!await this.hasExactCaption())await this.openMatchingTrialReel(prefix);
+                if (!await this.hasExactCaption()) throw new Error('Trial Reel full caption does not match');
+                await this.tapElement('accessibility id', 'more-options-button', 'More actions');
+                await this.waitFor('predicate string', 'label == "This reel is a trial reel." AND visible == 1', 'trial reel label', 10_000);
+                const shared = !!(await this.visible('predicate string', 'label == "Shared to Facebook"'));
+                const ai = !!(await this.visible('predicate string', 'label == "AI content"'));
+                await this.tapElement('predicate string', 'label == "Dismiss" AND visible == 1', 'close More');
+                receipts.instagram = { verified: true, evidence: `Matching Trial Reel on @antoniorevenue starts "${prefix}"; native label "This reel is a trial reel."${ai ? '; AI content label' : ''}` };
+                if (input.targets.some(t => t.platform === 'facebook')) {
+                    if (!shared) throw new Error('Instagram has not confirmed linked Facebook sharing yet');
+                    try {
+                        receipts.facebook = await new FacebookVerifier(this.base, this.signal).verifyPost(input);
+                    } finally {
+                        // Return to the matching Instagram Reel for the approved pinned comment.
+                        await this.start('com.burbn.instagram');
+                        if(!await this.hasExactCaption())await this.openMatchingTrialReel(prefix);
+                    }
+                }
+                await this.verifyRelatedReel(receipts);
+                return receipts;
+        } catch (error) {
+            throw new ReceiptVerificationError('Instagram receipt needs review after one navigation pass: '+(error instanceof Error?error.message:String(error)),receipts);
+        }
+    }
+
+    /** Resume receipt checks only. Never imports media, opens a composer or taps Share. */
+    async reconcile(input: PostingInput) {
+        this.input = input;
+        await this.start('com.burbn.instagram');
+        return this.verify(60_000);
+    }
+
+    private async openTrialReelsGrid() {
+        // Close a leftover own-comment context menu before looking for the profile tab.
+        const labels=visibleNativeNodes((await this.request(this.session+'/source')).value).map(n=>n.label);
+        if(labels.includes('Preview') && labels.some(l=>['Pin','Unpin','Delete','Reply with a reel'].includes(l))) {
+            await this.tapPoint(400,150);
+            await this.sleep(700);
+        }
+        // A retry may start inside a reel viewer or menu that hides the tab bar: back out first.
+        for (let step = 0; step < 5 && !(await this.visible('accessibility id', 'profile-tab')); step++) {
+            if (await this.visible('predicate string', 'label == "Dismiss" AND visible == 1')) await this.tapElement('predicate string', 'label == "Dismiss" AND visible == 1', 'Dismiss');
+            else if (await this.visible('accessibility id', 'back-button')) await this.tapElement('accessibility id', 'back-button', 'Back');
+            else if (await this.visible('accessibility id', 'BackButton')) await this.tapElement('accessibility id', 'BackButton', 'Back');
+            await this.sleep(1200);
+        }
+        await this.tapElement('accessibility id', 'profile-tab', 'Profile tab');
+        await this.sleep(1500);
+        const expected = this.input?.targets.find(t => t.platform === 'instagram')?.account.replace(/^@/, '');
+        if (expected && (await this.read('accessibility id', 'user-switch-title-button', 'label', 'active account')).replace(/^@/, '') !== expected)
+            throw new Error('Receipt account does not match the scheduled account');
+        // The current app labels the profile tabs, and groups trials under a cell named
+        // open-drafts whose label is just Drafts. Read current geometry, not a four-way guess.
+        const cells = async () => visibleNativeNodes((await this.request(this.session+'/source')).value)
+            .filter(n=>n.type==='XCUIElementTypeCell');
+        let rows=await cells();
+        const reelsTab=()=>rows.find(n=>n.label==='Reels'&&n.y>=100&&n.y+n.height<830);
+        if(!reelsTab()){
+            await this.request(this.session+'/wda/dragfromtoforduration',
+                {fromX:215,fromY:520,toX:215,toY:180,duration:0.3});
+            await this.sleep(1200);rows=await cells();
+        }
+        const tab=reelsTab();
+        if(!tab)throw new Error('The labeled profile Reels tab is not safely visible');
+        await this.tapPoint(tab.x+tab.width/2,tab.y+tab.height/2);
+        await this.sleep(1000);rows=await cells();
+        // Wait for the new tab data without tapping the tab again.
+        for(let read=0;read<4&&!rows.some(n=>n.label==='Trial reels'||n.name==='open-drafts'||n.label==='Drafts and trial reels');read++){
+            await this.sleep(1000);rows=await cells();
+        }
+        let trial=rows.find(n=>n.label==='Trial reels');
+        if(!trial){
+            let entry=rows.find(n=>n.name==='open-drafts'||n.label==='Drafts and trial reels');
+            if(entry&&entry.y>=100&&entry.y+entry.height>850){
+                await this.swipeUp();await this.sleep(1000);rows=await cells();
+                entry=rows.find(n=>n.name==='open-drafts'||n.label==='Drafts and trial reels');
+            }
+            if(!entry||entry.y<100||entry.y+entry.height>850)throw new Error('The Drafts and trials entry is not safely visible');
+            await this.tapPoint(entry.x+entry.width/2,entry.y+entry.height/2);
+            await this.sleep(800);rows=await cells();trial=rows.find(n=>n.label==='Trial reels');
+        }
+        if(!trial||trial.y<100||trial.y+trial.height>910)throw new Error('The Trial reels menu is not safely visible');
+        await this.tapPoint(trial.x+trial.width/2,trial.y+trial.height/2);
+        await this.waitFor('accessibility id', 'reels-video-thumbnail', 'trial reels grid', 15_000);
+    }
+    private async openMatchingTrialReel(prefix: string) {
+        await this.openTrialReelsGrid();
+        // A delayed upload may no longer be first. Inspect recent visible reels without reposting.
+        for (let index = 0; index < 3; index++) {
+            const rows = (await this.request(this.session + '/elements', {using:'accessibility id', value:'reels-video-thumbnail'})).value ?? [];
+            const visible: string[] = [];
+            for (const row of rows) if ((await this.request(`${this.session}/element/${this.id(row)}/displayed`)).value === true) visible.push(this.id(row));
+            if (!visible[index]) break;
+            const r=(await this.request(`${this.session}/element/${visible[index]}/rect`)).value;
+            if(r.x<0||r.y<80||r.x+r.width>431||r.y+r.height>925)throw Error('Trial Reel thumbnail is outside the screen');
+            await this.tapPoint(r.x+r.width/2,r.y+r.height/2);
+            await this.waitForOwnReelViewer();
+            await this.sleep(1800);
+            if (await this.hasExactCaption()) return;
+            await this.tapElement('accessibility id', 'back-button', 'back to Trial grid');
+            await this.waitFor('accessibility id', 'reels-video-thumbnail', 'trial reels grid', 10_000);
+        }
+        throw new Error('Matching caption not found among recent Trial Reels');
+    }
+
+    private async waitForOwnReelViewer() {
+        const account=this.input?.targets.find(t=>t.platform==='instagram')?.account;
+        if(!account)throw Error('Missing expected Instagram account');
+        const deadline=Date.now()+15_000;
+        do {
+            if(ownReelViewer((await this.request(this.session+'/source')).value,account))return;
+            await this.sleep(700);
+        }while(Date.now()<deadline);
+        throw Error('Owned Reel viewer could not be verified');
+    }
+
+    private async hasExactCaption(): Promise<boolean> {
+        if (!this.input) return false;
+        const account=this.input.targets.find(t=>t.platform==='instagram')?.account;
+        if(!account)return false;
+        return exactOwnReelCaption((await this.request(this.session+'/source')).value,this.input.caption,account);
+    }
+
+    /** Independent comment recovery after a verified post. Never calls Share. */
+    async commentOnPost(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly=false):Promise<CommentResult>{
+        this.input=input;
+        await this.start('com.burbn.instagram');
+        if(!await this.hasExactCaption())await this.openMatchingTrialReel(input.caption.slice(0,30));
+        const result=await this.commentAndPin(text,claim,existingOnly);
+        return {...result,commentVerified:true,pinned:true,evidence:'Exact full caption and own comment matched; native comment reports Comment is pinned.'};
+    }
+
+    /** Daily Story: open the trial reel with the most plays among the newest visible ones and share it to the Story once. */
+    async storyFromBestTrialReel(claim: () => Promise<void>): Promise<{ status: string; plays: number; rank: number; caption: string }> {
+        await this.start('com.burbn.instagram');
+        await this.openTrialReelsGrid();
+        const rows = (await this.request(this.session + '/elements', { using: 'accessibility id', value: 'reels-video-thumbnail' })).value ?? [];
+        let best = -1, plays = -1;
+        for (let i = 0; i < Math.min(rows.length, 9); i++) {
+            const r = await this.raw(`${this.session}/element/${this.id(rows[i])}/attribute/label`);
+            const m = /- ([\d,.]+)(K?) plays$/.exec(String(r.body?.value ?? ''));
+            if (!m) continue;
+            const n = Number(m[1].replace(/,/g, '')) * (m[2] ? 1000 : 1);
+            if (n > plays) { plays = n; best = i; }
+        }
+        if (best < 0) throw new Error('No play counts found on Trial reels');
+        await this.request(`${this.session}/element/${this.id(rows[best])}/click`, {});
+        await this.waitForOwnReelViewer();
+        const caption = await this.read('predicate string', 'type == "XCUIElementTypeStaticText" AND visible == 1 AND label CONTAINS " "', 'label', 'caption', 5_000).catch(() => '');
+        await this.tapElement('predicate string', 'name == "send-button" AND label == "Send" AND visible == 1', 'Send');
+        await this.tapElement('predicate string', 'name == "Add to story" AND visible == 1', 'Add to story');
+        await this.waitFor('accessibility id', 'share-to-your-story', 'Story editor', 30_000);
+        await claim();
+        await this.tapElement('accessibility id', 'share-to-your-story', 'Share to your story');
+        const deadline = Date.now() + 30_000;
+        while (await this.visible('accessibility id', 'share-to-your-story')) {
+            if (Date.now() >= deadline) throw new Error('Story editor did not close after one Share; review the account, do not retry');
+            await this.sleep(1000);
+        }
+        return { status: 'story_shared', plays, rank: best, caption: caption.slice(0, 80) };
+    }
+    /** Post the approved first comment on the open reel, then pin it. Runs once, after the release is published. */
+    async commentAndPin(text: string, claim: () => Promise<void>, existingOnly=false): Promise<{ status: string }> {
+        await this.tapElement('predicate string', 'name == "comment-button" AND visible == 1', 'Comments');
+        await this.sleep(1500); // Read positions after the comments sheet finishes moving.
+        const own = async () => visibleNativeNodes((await this.request(this.session+'/source')).value)
+            .find(n=>n.type==='XCUIElementTypeCell' && n.label.startsWith(`antoniorevenue said ${text}. Commented `));
+        let mine=await own();
+        if(mine?.label.includes('Comment is pinned.'))return {status:'already_pinned'};
+        if(!mine){
+            if(existingOnly)throw new Error('Existing own comment not found; repair cannot create one');
+            const box=await this.waitFor('predicate string','type == "XCUIElementTypeTextView" AND name == "text-view"','comment box');
+            const draft=(await this.request(`${this.session}/element/${box}/attribute/value`)).value;
+            if(draft && draft!=='Add a comment…' && draft!=='Add a comment')throw new Error('Comment draft is not empty');
+            await this.request(`${this.session}/element/${box}/value`,{value:[text]});
+            if((await this.read('predicate string','type == "XCUIElementTypeTextView" AND name == "text-view"','value','comment text'))!==text)throw new Error('Comment text readback does not match');
+            await claim();
+            await this.tapElement('predicate string','name == "send-button" AND label == "Post comment" AND visible == 1','Post comment');
+            for(let n=0;n<15;n++){await this.sleep(1000);mine=await own();if(mine)break;}
+            if(!mine)throw new Error('Posted comment receipt missing; never send again automatically');
+        }else await claim();
+        await this.sleep(700);
+        mine=await own();
+        if(!mine)throw new Error('Our comment moved out of view');
+        await this.tapPoint(mine.x+Math.min(mine.width/2,160),mine.y+Math.min(mine.height-15,45),900);
+        if(await this.visible('predicate string','(label == "Unpin" OR label == "Unpin comment") AND visible == 1'))return {status:'already_pinned'};
+        await this.tapElement('predicate string', '(label == "Pin" OR label == "Pin comment") AND visible == 1', 'Pin');
+        if (await this.visible('predicate string', 'label == "Pin comment" AND visible == 1')) await this.tapElement('predicate string', 'label == "Pin comment" AND visible == 1', 'confirm Pin comment');
+        let verified=false;
+        for(let n=0;n<15;n++){await this.sleep(1000);if((await own())?.label.includes('Comment is pinned.')){verified=true;break;}}
+        if(!verified)throw new Error('Pinned comment readback missing');
+        return { status: 'pinned' };
+    }
+}

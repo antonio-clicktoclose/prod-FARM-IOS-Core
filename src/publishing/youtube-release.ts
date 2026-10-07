@@ -1,0 +1,201 @@
+import{readFile}from'node:fs/promises';
+import{createHash}from'node:crypto';
+import sharp from'sharp';
+import{PreparedYouTubeRelease,reviewedLongForm}from'./prepared-youtube.js';
+import{visibleNativeNodes}from'./native-xml.js';
+import{NativeMuteGuard}from'./native-mute.js';
+import{inspectShortsVideo}from'./youtube-shorts.js';
+import{recognizeWords}from'../tiktok/ocr.js';
+import type{DirectMediaStore}from'./direct-media.js';
+import type{ReleaseMedia}from'./instagram-release.js';
+import type{PostingInput}from'./model.js';
+import type{ReleaseEvidence}from'./release-policy.js';
+export function isFullYouTubeTrim(value:string,durationSeconds:number){return Number.isFinite(durationSeconds)&&durationSeconds>0&&value==='Selected from Less than a second to '+Math.round(durationSeconds)+' seconds';}
+
+/** Fresh native composer for one reviewed file. Submission still uses the normal one-shot claim. */
+export class YouTubeRelease extends PreparedYouTubeRelease {
+ constructor(base:string,signal:AbortSignal,private saved:any,private imports:DirectMediaStore){super(base,signal,saved);}
+ private async nodes(){return visibleNativeNodes(String((await this.request(this.session+'/source')).value));}
+ private async selectAlbum(name:string){
+  let last='';
+  for(let pass=0;pass<6;pass++){
+   if(!(await this.nodes()).some(n=>n.name==='id.creation.photolibrary.album.cell'))throw Error('Native album list changed');
+   const rows=(await this.request(this.session+'/elements',{using:'predicate string',value:'type == "XCUIElementTypeCell" AND label == "'+name+'" AND visible == 1'})).value;
+   if(rows.length>1)throw Error('YouTube source album is ambiguous');
+   if(rows.length===1){const r=(await this.request(this.session+'/element/'+this.id(rows[0])+'/rect')).value;if(r.y<90||r.y+r.height>850)throw Error('YouTube source album is outside the visible list');await this.tapPoint(r.x+r.width/2,r.y+r.height/2);return;}
+   const current=(await this.nodes()).filter(n=>n.type==='XCUIElementTypeCell'&&n.name==='id.creation.photolibrary.album.cell').map(n=>n.label).join('|');
+   if(!current||current===last||pass===5)throw Error('YouTube source album was not reached; import was not repeated');last=current;
+   await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:780,toX:215,toY:250,duration:.4});await this.sleep(500);
+  }
+ }
+ /** OCR only locates a visible row. Full metadata values are checked through native fields. */
+ private async metadataRow(phrase:string){
+  let last='';
+  for(let pass=0;pass<3;pass++){
+   if(!await this.visible('accessibility id','id.metadata_editor.upload_button'))throw Error('YouTube metadata composer is not active');
+   const png=Buffer.from((await this.request('/screenshot')).value,'base64'),m=await sharp(png).metadata();
+   if(m.width!==1290||m.height!==2796)throw Error('YouTube metadata screen size changed');
+   const words=await recognizeWords(png),parts=phrase.toLowerCase().split(' '),found=[];
+   for(const w of words.filter(w=>w.text.toLowerCase()===parts[0]&&w.y>280&&w.y<2400)){
+    const line=words.filter(n=>Math.abs(n.y-w.y)<25&&n.x>=w.x).sort((a,b)=>a.x-b.x);
+    if(parts.every((p,n)=>line[n]?.text.toLowerCase()===p))found.push(w);
+   }
+   if(found.length>1)throw Error('YouTube metadata row is ambiguous: '+phrase);
+   if(found.length===1){const w=found[0]!;await this.tapPoint(250,(w.y+w.height/2)/3);return;}
+   const current=words.map(w=>w.text).join('|');if(current===last||pass===2)throw Error('YouTube metadata row is missing: '+phrase);last=current;
+   await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:750,toX:215,toY:300,duration:.4});await this.sleep(500);
+  }
+ }
+ private async attributes(input:PostingInput){
+  // The small grey Attributes heading is not reliably recognized. Its unique
+  // Tags subtitle is visible on the same reviewed row.
+  if(!await this.visible('accessibility id','Attributes'))await this.metadataRow('Tags');await this.waitFor('accessibility id','Attributes','Native Attributes');
+  let words=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
+  if(words.filter(w=>w.text==='No'&&w.y>300&&w.y<500).length!==1){
+   await this.tapElement('predicate string','name == "id.elements.components.metadata_editor.altered_content_picker" AND label == "AI use" AND visible == 1','AI use');
+   await this.tapElement('accessibility id','No','AI use No');
+   await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Back to Attributes');
+   words=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
+   if(words.filter(w=>w.text==='No'&&w.y>300&&w.y<500).length!==1)throw Error('YouTube AI use did not save; no Upload');
+  }
+  await this.tapElement('accessibility id','Add tags','Native tags');
+  for(const tag of input.youtube!.publishing!.tags){await this.assertInputApp();await this.request(this.session+'/wda/keys',{value:[tag+'\n']});}
+  words=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
+  if(!input.youtube!.publishing!.tags.every(tag=>words.some(w=>w.text.toLowerCase()===tag.toLowerCase()&&w.y<1700)))throw Error('Native YouTube tags did not match');
+  await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Back to details');
+  await this.metadataRow('Community');await this.waitFor('accessibility id','Community','Native Community');
+  if(!(await this.nodes()).some(n=>n.name==='id.elements.components.metadata_editor.comment_picker'&&n.label==='Comments. On'))throw Error('YouTube comments are not On');
+  await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Back to details');
+ }
+ private async related(){
+  await this.metadataRow('Related video');await this.waitFor('accessibility id','Select video','Owned video picker');let last='';
+  for(let n=0;n<5;n++){
+   const nodes=await this.nodes(),matching=nodes.filter(n=>n.label?.startsWith(reviewedLongForm.title+' - 15 minutes, 57 seconds - Go to channel - '+reviewedLongForm.owner));
+   const rows=[...new Map(matching.map(n=>[[n.x,n.y,n.width,n.height,n.label].join('|'),n])).values()];
+   if(rows.length){if(rows.length!==1)throw Error('Related long-form video is ambiguous');const r=rows[0]!;await this.tapPoint(r.x+r.width/2,r.y+r.height/2);return;}
+   const current=nodes.filter(n=>n.name==='eml.cvr').map(n=>n.label).join('|');
+   if(!current||current===last||n===4)throw Error('Reviewed long-form video was not reached; no Upload');last=current;
+   await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:780,toX:215,toY:200,duration:.5});await this.sleep(500);
+  }
+ }
+ override async preflight(input:PostingInput,mediaValue:unknown):Promise<ReleaseEvidence>{
+  this.ready=false;this.input=input;const media=mediaValue as ReleaseMedia,review=this.saved.results?.directYouTubeReview;
+  if(!review?.coverReviewed||review.sourceSha256!==media.sha256||review.relatedVideoId!==reviewedLongForm.id||input.youtube?.publishing?.relatedVideoId!==reviewedLongForm.id||input.youtube.visibility!=='public'||input.youtube.madeForKids||input.youtube.publishing.aiUse!=='no')throw Error('This YouTube source needs its own reviewed cover and long-form link');
+  if(createHash('sha256').update(await readFile(media.path)).digest('hex')!==media.sha256)throw Error('Reviewed YouTube file changed');
+  const probe=await inspectShortsVideo(media.path);await new NativeMuteGuard(this.base,this.signal).prepare();await this.start('com.google.ios.youtube');
+  if(await this.visible('accessibility id','id.metadata_editor.upload_button')||await this.visible('accessibility id','id.creation.editor.button.next')||await this.visible('accessibility id','id.creation.photolibrary.picker.button.show_album_list')||(await this.nodes()).some(n=>n.name==='id.creation.photolibrary.album.cell'))throw Error('An existing YouTube composer needs review; it was not overwritten');
+  await this.tapElement('accessibility id','id.ui.pivotbar.FElibrary.button','You');
+  if(await this.visible('accessibility id','View channel'))await this.tapElement('accessibility id','View channel','Owned channel');
+  await this.waitFor('accessibility id','@'+input.targets[0]!.account.replace(/^@/,''),'Reviewed YouTube channel');
+  if(!(await this.nodes()).some(n=>n.name==='@'+input.targets[0]!.account.replace(/^@/,'')))throw Error('YouTube account is not the reviewed channel');
+  const imported=await this.imports.ensure(input.deviceUdid,media,this.base,this.signal);
+  await this.tapElement('accessibility id','id.ui.pivotbar.FEuploads.button','Create');
+  await this.tapElement('accessibility id','id.creation.camera.button.segment_import','Choose saved video');
+  await this.tapElement('accessibility id','id.creation.photolibrary.picker.button.show_album_list','Album list');
+  return this.completeGallery(input,media,imported.albumName,probe.durationSeconds);
+ }
+ /** Resume only an attended, source-bound gallery checkpoint, never an uncertain upload. */
+ protected async completeGallery(input:PostingInput,media:ReleaseMedia,albumName:string,durationSeconds:number):Promise<ReleaseEvidence>{
+  this.ready=false;this.input=input;
+  if(createHash('sha256').update(await readFile(media.path)).digest('hex')!==media.sha256)throw Error('Source changed before gallery selection');
+  const current=await this.nodes(),sourceGallery=current.some(n=>n.name==='id.creation.gallery.title.create'&&n.label===albumName);
+  if(!sourceGallery){
+   if(await this.visible('accessibility id','All Albums'))await this.tapElement('accessibility id','All Albums','All Albums');
+   else if(!current.some(n=>n.name==='id.creation.photolibrary.album.cell'))throw Error('Source-bound album picker is not active');
+   await this.selectAlbum(albumName);
+  }
+  await this.waitFor('predicate string','name == "id.creation.gallery.title.create" AND label == "'+albumName+'" AND visible == 1','Selected source album');
+  if(await this.read('accessibility id','id.creation.gallery.title.create','label','Selected album')!==albumName)throw Error('YouTube selected a different album');
+  const videos=(await this.request(this.session+'/elements',{using:'predicate string',value:'type == "XCUIElementTypeCell" AND name == "Video" AND visible == 1'})).value;
+  if(videos.length!==1)throw Error('YouTube album must contain exactly one visible video');
+  const gallery=String((await this.request(this.session+'/element/'+this.id(videos[0])+'/attribute/value')).value),seconds=Number(/^(\d+) seconds/.exec(gallery)?.[1]);
+  if(!Number.isFinite(seconds)||Math.abs(seconds-durationSeconds)>1)throw Error('YouTube gallery duration does not match the reviewed source');
+  await this.tapElement('predicate string','type == "XCUIElementTypeCell" AND name == "Video" AND visible == 1','Reviewed video');
+  return this.completeSelectedVideo(input,media);
+ }
+ protected async completeSelectedVideo(input:PostingInput,media:ReleaseMedia):Promise<ReleaseEvidence>{
+  this.ready=false;this.input=input;
+  if(await this.read('accessibility id','id.creation.gallery.title.create','label','Source album')!=='PF-'+media.sha256.slice(0,12))throw Error('Selected YouTube source album changed');
+  if(!await this.visible('accessibility id','id.creation.thumbnail_belt.cell'))throw Error('No source-bound selection');
+  await this.tapElement('accessibility id','id.creation.gallery.next.button','Gallery Next');
+  return this.completeTrimmedVideo(input,media);
+ }
+ /** Continue a known source selection without changing the full-length trim. */
+ protected async completeTrimmedVideo(input:PostingInput,media:ReleaseMedia):Promise<ReleaseEvidence>{
+  this.ready=false;this.input=input;
+  const probe=await inspectShortsVideo(media.path);
+  if(!isFullYouTubeTrim(await this.read('accessibility id','Trim filmstrip','value','Full source trim'),probe.durationSeconds))throw Error('YouTube trim differs from the reviewed full source');
+  await this.tapElement('accessibility id','id.creation.segment_import.done.button','Keep full source trim');
+  await this.tapElement('accessibility id','id.creation.editor.button.next','Editor Next',30000);await this.waitFor('accessibility id','id.metadata_editor.upload_button','New Short details',60000);
+  const titles=(await this.request(this.session+'/elements',{using:'class name',value:'XCUIElementTypeTextView'})).value;if(titles.length!==1)throw Error('YouTube title field is ambiguous');
+  await this.assertInputApp();await this.request(this.session+'/element/'+this.id(titles[0])+'/value',{value:[input.youtube!.title]});
+  if(await this.read('class name','XCUIElementTypeTextView','value','Saved Short title')!==input.youtube!.title)throw Error('YouTube title differs');
+  await this.tapElement('accessibility id','id.elements.components.metadata_editor.open_shorts_thumbnail_editor','Opening thumbnail');
+  return this.completeOpeningCover(input,media);
+ }
+ protected async completeOpeningCover(input:PostingInput,media:ReleaseMedia):Promise<ReleaseEvidence>{
+  this.ready=false;this.input=input;
+  if(createHash('sha256').update(await readFile(media.path)).digest('hex')!==media.sha256)throw Error('Reviewed cover source changed');
+  const frame=await this.rect('accessibility id','Thumbnail frame selector','Thumbnail frame');
+  if(frame.x<0||frame.x+frame.width>431||frame.y<800||frame.y+frame.height>910)throw Error('YouTube thumbnail selector moved');
+  // The accessibility value setter rounds to one second. The left edge selects
+  // the actual opening frame and its native value must confirm it.
+  await this.tapPoint(frame.x+2,frame.y+frame.height/2);
+  if(await this.read('accessibility id','Thumbnail frame selector','value','Opening frame')!=='Less than a second')throw Error('YouTube opening cover was not selected');
+  await this.tapElement('accessibility id','id.metadata.thumbnail_editor.done.button','Save opening thumbnail');
+  return this.completeMetadataDetails(input);
+ }
+ protected async completeMetadataDetails(input:PostingInput):Promise<ReleaseEvidence>{
+  this.ready=false;this.input=input;
+  let nodes=await this.nodes();if(!nodes.some(n=>n.label==='Visibility, Public'))throw Error('YouTube public visibility needs native review');
+  if(!nodes.some(n=>n.label==="Audience, No, it's not made for kids")){
+   if(!nodes.some(n=>n.name==='id.elements.components.metadata_editor.audience_picker'&&n.label==='Select audience'))throw Error('YouTube audience changed');
+   await this.tapElement('predicate string','name == "id.elements.components.metadata_editor.audience_picker" AND label == "Select audience" AND visible == 1','Audience');
+   const noKids='name == "id.elements.components.metadata_editor.audience_settings.mfk.2" AND label == "No, it\'s not made for kids" AND visible == 1';
+   if(await this.read('predicate string',noKids,'value','Audience selection')!=='1')await this.tapElement('predicate string',noKids,'Not made for kids');
+   if(await this.read('predicate string',noKids,'value','Saved audience')!=='1')throw Error('YouTube audience did not save');
+   await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Back to details');
+  }
+  await this.tapElement('accessibility id','id.elements.components.metadata_editor.expander.collapsed_button','More details');await this.metadataRow('Description');
+  return this.completeDescription(input);
+ }
+ protected async completeDescription(input:PostingInput):Promise<ReleaseEvidence>{
+  this.ready=false;this.input=input;
+  const header=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
+  const heading=header.filter(w=>w.y>120&&w.y<340).sort((a,b)=>a.x-b.x).map(w=>w.text.toLowerCase()).join(' ');
+  if(!heading.includes('add description'))throw Error('Native description editor is not active');
+  const fields=(await this.request(this.session+'/elements',{using:'class name',value:'XCUIElementTypeTextView'})).value,candidates=[];
+  // YouTube keeps an offscreen title field in the hierarchy. The actual
+  // description field can itself report visible=false while the keyboard is open.
+  for(const f of fields){const id=this.id(f),r=(await this.request(this.session+'/element/'+id+'/rect')).value;if(r.x>=12&&r.x<=20&&r.y>=100&&r.y<=150&&r.width>=390&&r.width<=410)candidates.push(id);}
+  if(candidates.length!==1)throw Error('YouTube description is ambiguous');const field=candidates[0]!;
+  const existing=String((await this.request(this.session+'/element/'+field+'/attribute/value')).value??'');
+  if(existing&&existing!==input.caption)throw Error('An edited description was left unchanged');
+  if(existing!==input.caption){await this.assertInputApp();await this.request(this.session+'/element/'+field+'/value',{value:[input.caption]});}
+  if(String((await this.request(this.session+'/element/'+field+'/attribute/value')).value??'')!==input.caption)throw Error('YouTube description differs');
+  // Hashtag suggestions incorrectly mark the visible header as hidden. The
+  // screenshot checks the editor, and duplicate hierarchy nodes must share one rect.
+  const backRows=(await this.request(this.session+'/elements',{using:'accessibility id',value:'id.elements.components.metadata_editor.app_bar.back_button'})).value,backRects=[];
+  for(const b of backRows)backRects.push((await this.request(this.session+'/element/'+this.id(b)+'/rect')).value);
+  const distinct=[...new Map(backRects.map(r=>[JSON.stringify(r),r])).values()];
+  if(distinct.length!==1)throw Error('Description Back is ambiguous');const back=distinct[0]!;
+  if(back.x< -5||back.x>5||back.y<50||back.y>65||back.width!==48||back.height!==48)throw Error('Description Back moved');
+  await this.tapPoint(back.x+back.width/2,back.y+back.height/2);await this.sleep(500);
+  if(!await this.visible('accessibility id','id.metadata_editor.upload_button')){
+   // The first Back can close hashtag suggestions. A second is permitted only
+   // after the real description Back is visible; it never touches Upload.
+   await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Leave description');
+  }
+  await this.waitFor('accessibility id','id.metadata_editor.upload_button','Return to source details');await this.related();
+  return this.completeAttributes(input);
+ }
+ protected async completeAttributes(input:PostingInput):Promise<ReleaseEvidence>{
+  this.ready=false;this.input=input;await this.attributes(input);
+  for(let n=0;n<3&&(!await this.visible('class name','XCUIElementTypeTextView')||!(await this.nodes()).some(n=>n.name==='id.elements.components.identity_chip_component'));n++){
+   if(n===2)throw Error('YouTube source details did not return to the top');
+   await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:250,toX:215,toY:780,duration:.4});await this.sleep(500);
+  }
+  if(!(await this.nodes()).some(n=>n.name==='id.elements.components.identity_chip_component'&&n.label.includes('@'+input.targets[0]!.account.replace(/^@/,''))))throw Error('YouTube upload account changed');
+  this.ready=true;return{exactMedia:true,videoFrameCover:true,caption:true,account:true,automaticPromotion:false,linkedFacebook:false,youtubeRelatedVideo:{id:reviewedLongForm.id,format:'long_form',verified:true}};
+ }
+}

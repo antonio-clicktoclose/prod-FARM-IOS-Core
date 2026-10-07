@@ -405,8 +405,17 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         if (await options.scheduler.activeExecution(request.params.udid)) {
             return reply.code(409).send({ error: 'Remote input is disabled while automation is running' });
         }
-        await remote.performAction(request.params.udid, request.body);
-        return { ok: true };
+        const client = await options.scheduler.connection.pool.connect();
+        let locked = false;
+        try {
+            locked = (await client.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) AS locked', [request.params.udid])).rows[0].locked;
+            if (!locked) return reply.code(409).send({ error: 'The phone is busy with a publishing or attended job. Wait for it to finish.' });
+            await remote.performAction(request.params.udid, request.body);
+            return { ok: true };
+        } finally {
+            if (locked) await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [request.params.udid]);
+            client.release(true);
+        }
     });
     app.get<{ Params: { udid: string } }>('/api/devices/:udid/connection', async (request, reply) => {
         const registered = (await loadRegisteredDevices()).find(({ udid }) => udid === request.params.udid);
@@ -570,6 +579,9 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
         app.get('/assets/htmx.min.js', asset('text/javascript', theme.htmx));
         app.get('/api/fragments/devices', async (_request, reply) => {
             const devices = await registeredWithStatus();
+            const connected = await discoverConnectedDevices();
+            const pending = connected.filter((device) => !devices.some((saved) => saved.udid === device.udid));
+            const pendingCards = pending.map((device) => `<article class="device-card"><div class="device-copy"><h2>${escapeHtml(device.name)}</h2><p>iOS ${escapeHtml(device.osVersion)}</p><span class="connected"><span></span>Connected · Setup incomplete</span><p>Finish device checks and calibrate its controls before scheduling posts.</p></div><div class="device-card-actions"><a class="button secondary" href="/devices/register">Continue setup</a></div></article>`).join('');
             const active = devices.filter((device) => !device.disabled);
             const disabled = devices.filter((device) => device.disabled);
             const toggleButton = (udid: string, label: string, next: boolean) =>
@@ -591,7 +603,7 @@ export async function createApp(options: CreateAppOptions): Promise<FastifyInsta
                 ? `<details class="disabled-devices"${disabled.length ? '' : ' hidden'}><summary>Disconnected devices (${disabled.length})</summary><ul>${disabled.map((device) => `<li><span>${escapeHtml(device.name)}</span>${toggleButton(device.udid, 'Reconnect', false)}</li>`).join('')}</ul></details>`
                 : '';
             const toggleScript = `<script>if(!window.__deviceToggle){window.__deviceToggle=1;document.addEventListener('click',async function(e){var b=e.target.closest('[data-toggle-device]');if(!b)return;e.preventDefault();b.disabled=true;var r=await fetch('/api/devices/'+b.dataset.toggleDevice,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({disabled:b.dataset.disabled==='true'})});if(r.ok){if(window.htmx)htmx.ajax('GET','/api/fragments/devices',{target:'#device-list',swap:'outerHTML'})}else{b.disabled=false;alert(((await r.json().catch(function(){return{}}))||{}).error||'Request failed')}})}</script>`;
-            return reply.type('text/html').send(`<section id="device-list" class="device-list" hx-get="/api/fragments/devices" hx-trigger="every 5s" hx-swap="outerHTML" aria-live="polite">${cards || '<div class="empty-state"><h2>No active devices</h2></div>'}${disabledPanel}${toggleScript}</section>`);
+            return reply.type('text/html').send(`<section id="device-list" class="device-list" hx-get="/api/fragments/devices" hx-trigger="every 5s" hx-swap="outerHTML" aria-live="polite">${cards || pendingCards ? cards + pendingCards : '<div class="empty-state"><h2>No connected devices</h2></div>'}${disabledPanel}${toggleScript}</section>`);
         });
         app.get<{ Params: { udid: string } }>('/api/devices/:udid/fragments/summary', async (request, reply) => {
             const device = (await discoverConnectedDevices()).find(({ udid }) => udid === request.params.udid);
