@@ -10,6 +10,7 @@ import {ReceiptVerificationError, type ReleaseDriver, type ReleaseEvidence} from
 import { FacebookVerifier } from './facebook-verify.js';
 import { WdaApp, parseGalleryCell } from './wda-app.js';
 import {locateRelatedCover} from './instagram-related.js';
+import {metaReceipts} from './meta-receipts.js';
 
 const run = promisify(execFile);
 const FACEBOOK_ON = 'Antonio Revenue, Facebook · Public, On';
@@ -347,6 +348,9 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         const receipts:Record<string,{verified:boolean;evidence:string}>={};
         // One navigation pass. A delayed result stays in review for a later read-only check.
         await this.sleep(Math.min(timeoutMs, 15_000));
+        // Prefer tap-free Graph receipts (Oct 7: in-app grids lagged or were covered by prompts).
+        const graph = await this.graphReceipts(input, Math.min(timeoutMs, 3 * 60_000));
+        if (graph) return graph;
         try {
                 await this.dismissPromoSheets();
                 if(!await this.hasExactCaption())await this.openMatchingTrialReel(prefix);
@@ -383,6 +387,24 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
     }
 
     /** Resume receipt checks only. Never imports media, opens a composer or taps Share. */
+    /** Graph confirmation for Instagram and linked Facebook. A Facebook Reel without its caption is repaired in the app. */
+    protected async graphReceipts(input: PostingInput, waitMs: number) {
+        if (!/^http:\/\/127\.0\.0\.1:/.test(this.base)) return undefined; // unit tests use fake hosts; no network there
+        const facebook = input.targets.some(t => t.platform === 'facebook'), deadline = Date.now() + waitMs;
+        let found: Awaited<ReturnType<typeof metaReceipts>> = {};
+        for (;;) {
+            try { found = await metaReceipts(input.caption); } catch { return undefined; }
+            if (found.instagram && (!facebook || found.facebook || found.facebookMissingCaption)) break;
+            if (Date.now() >= deadline) return undefined;
+            await this.sleep(20_000);
+        }
+        const receipts: Record<string, { verified: boolean; url?: string; evidence: string }> = { instagram: found.instagram! };
+        if (facebook) receipts.facebook = found.facebook ?? await new FacebookVerifier(this.base, this.signal).verifyPost(input, false, this.mediaPath ? { mediaPath: this.mediaPath } : false);
+        // Best effort: open the new Reel so the in-run first comment can be pinned. If this fails, the comment job retries later.
+        try { await this.start('com.burbn.instagram'); if (!await this.hasExactCaption()) await this.openMatchingTrialReel(input.caption.trim().split('\n')[0].slice(0, 30).trim()); } catch {}
+        return receipts;
+    }
+
     async reconcile(input: PostingInput) {
         this.input = input;
         await this.start('com.burbn.instagram');

@@ -55,8 +55,27 @@ export class PreparedYouTubeRelease extends WdaApp implements ReleaseDriver {
         await this.assertInputApp();
         await this.tapElement('accessibility id','id.metadata_editor.upload_button','Upload Short');
     }
+    /** Public, tap-free receipt: the exact title on the channel's own feed. Shorts appear within about a minute. */
+    protected async publicFeedReceipt(input:PostingInput,waitMs:number){
+        const title=input.youtube!.title.trim(),deadline=Date.now()+waitMs;
+        const clean=(t:string)=>t.replace(/&amp;/g,'&').replace(/&#39;/g,"'").replace(/&quot;/g,'"').trim();
+        while(true){
+            try{
+                const xml=await (await fetch('https://www.youtube.com/feeds/videos.xml?channel_id='+input.youtube!.channelId,{signal:AbortSignal.timeout(20_000)})).text();
+                for(const [,id,t] of xml.matchAll(/<yt:videoId>(.*?)<\/yt:videoId>[\s\S]*?<title>(.*?)<\/title>/g))
+                    if(clean(t!)===title)return{verified:true,source:'youtube_public_feed',url:'https://youtube.com/shorts/'+id,
+                        evidence:`Exact title on channel ${input.youtube!.channelId} public feed; related long-form video verified before Upload`};
+            }catch{}
+            if(Date.now()>=deadline)return undefined;
+            await this.sleep(15_000);
+        }
+    }
     async verify(){
-        const input=this.input!;await this.sleep(15_000);
+        const input=this.input!;
+        // Prefer the public feed: no navigation, no tile guessing (Oct 7: the in-app grid lagged and opened an older Short).
+        const fromFeed=await this.publicFeedReceipt(input,3*60_000);
+        if(fromFeed)return {youtube:fromFeed};
+        await this.sleep(15_000);
         let source=String((await this.request(this.session+'/source')).value);
         let nodes=visibleNativeNodes(source);
         const dismissCopyPreview=async()=>{
@@ -111,6 +130,6 @@ export class PreparedYouTubeRelease extends WdaApp implements ReleaseDriver {
         await this.tapElement('accessibility id','id.ui.browse.close.button','Close description');
         return {youtube:{verified:true,source:'youtube_app',evidence:'Exact native title, account and full description matched. Viewer-facing link matched the reviewed owned long-form video '+reviewedLongForm.id}};
     }
-    async reconcile(input:PostingInput){this.input=input;await this.start('com.google.ios.youtube');return this.verify();}
+    async reconcile(input:PostingInput){this.input=input;const fromFeed=await this.publicFeedReceipt(input,30_000);if(fromFeed)return {youtube:fromFeed};await this.start('com.google.ios.youtube');return this.verify();}
     async leaveVideo(){await this.exitApp('com.google.ios.youtube');}
 }
