@@ -136,14 +136,16 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                 if(item.results?.preparedNative?.kind==='instagram') return new PreparedInstagramRelease(`http://127.0.0.1:${device.wdaLocalPort ?? 8100}`,releaseSignal,item);
                 return new InstagramRelease(`http://127.0.0.1:${device.wdaLocalPort ?? 8100}`, releaseSignal,directImports);
             };
-            await store.tick(driverFor, udid => readiness.get(udid) === true, allowed);
-            await runDirectStories(pool,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60000)]));
+            // Log any step that holds a tick for more than 20 s, so a starved comment queue shows its cause.
+            const timed=async(step:string,run:()=>Promise<unknown>)=>{const t=Date.now();try{await run();}finally{const s=Math.round((Date.now()-t)/1000);if(s>20)console.log(new Date().toISOString(),'tick step',step,s+'s');}};
+            await timed('releases',()=>store.tick(driverFor, udid => readiness.get(udid) === true, allowed));
+            await timed('stories',()=>runDirectStories(pool,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60000)])));
             // Up to three read-only receipt passes, ten minutes apart. Never a second Share.
             const receiptChecks=await pool.query(`SELECT item_id FROM scheduler.publishing_releases
                 WHERE item_id=ANY($1::uuid[]) AND state='needs_review' AND share_claimed_at IS NOT NULL
                 AND updated_at<now()-interval '10 minutes'
                 AND COALESCE((result->>'receiptChecks')::int,CASE WHEN result ? 'lastReceiptCheck' THEN 1 ELSE 0 END)<3`,[allowed]);
-            for (const row of receiptChecks.rows) await store.reconcilePending(driverFor, row.item_id);
+            for (const row of receiptChecks.rows) await timed('receipt check '+row.item_id.slice(0,8),()=>store.reconcilePending(driverFor, row.item_id));
             // One comment job per tick, after due video releases. Never delay an imminent slot.
             {
                 const candidates=await pool.query(`SELECT i.* FROM scheduler.publishing_items i
