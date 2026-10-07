@@ -83,7 +83,7 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                         if(!devices.some(d=>d.udid===item.input.deviceUdid))continue;
                         const group=nativeGroup(item.input);
                         if(item.results?.release?.nativeFlowFingerprint!==status.flows[group]?.fingerprint)continue;
-                        for(const platform of ['instagram','facebook','tiktok','youtube'] as CommentPlatform[]){
+                        for(const platform of ['instagram','facebook','tiktok'] as CommentPlatform[]){
                         if(directPausedCommentPlatforms().includes(platform))continue;
                             if(!item.input.targets.some((t:any)=>t.platform===platform)||!status.comments[platform]?.layoutAvailable)continue;
                             const pilot=pilots.some(p=>p.item_id===item.id)||status.flows[group]?.pilotItemId===item.id;
@@ -157,7 +157,7 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                 let ran=false;
                 for(const item of candidates.rows){
                     if(await directVideoDueSoon(pool,allowed,item.input.deviceUdid))continue;
-                    for(const platform of ['instagram','facebook','tiktok'] as CommentPlatform[]){
+                    for(const platform of ['instagram','facebook','tiktok','youtube'] as CommentPlatform[]){
                         if(directPausedCommentPlatforms().includes(platform))continue;
                         if(!item.input.targets.some((t:any)=>t.platform===platform)||!item.results?.release?.receipts?.[platform]?.verified)continue;
                         // failed_before_action posted nothing and may be retried; uncertain Instagram/Facebook comments get pin-only retries
