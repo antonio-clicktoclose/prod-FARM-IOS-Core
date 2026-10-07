@@ -29,13 +29,14 @@ export class FacebookComments extends FacebookVerifier {
         for(const row of authors){const r=(await this.request(`${this.session}/element/${this.id(row)}/rect`)).value;if(r.y<body.y&&body.y-r.y<45)return body;}
         throw new Error('Matching comment does not have the expected author');
     }
-    async commentOnPost(input:PostingInput,text:string,claim:()=>Promise<void>):Promise<CommentResult>{
+    async commentOnPost(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly=false):Promise<CommentResult>{
         await this.verifyPost(input,true);
         await this.tapElement('accessibility id','shorts-comment-top-button','Facebook comments');
         const box='type == "XCUIElementTypeTextView" AND name == "comment-composer-text-area" AND label == "Comment as Antonio Revenue"';
         await this.waitFor('predicate string',box,'Comment as Antonio Revenue');
         let own=await this.ownComment(text);let claimed=false;
         if(!own){
+            if(existingOnly)throw new Error('Existing own comment not found; repair cannot create one');
             await this.tapElement('predicate string',box,'Comment box');
             const existing=await this.read('predicate string',box,'value','Comment draft');
             if(existing.trim())throw new Error('Facebook comment draft is not empty');

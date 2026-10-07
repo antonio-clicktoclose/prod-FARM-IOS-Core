@@ -155,19 +155,20 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                     for(const platform of ['instagram','facebook','tiktok'] as CommentPlatform[]){
                         if(directPausedCommentPlatforms().includes(platform))continue;
                         if(!item.input.targets.some((t:any)=>t.platform===platform)||!item.results?.release?.receipts?.[platform]?.verified)continue;
-                        // Nothing was posted on failed_before_action, so it may be retried (3 times, 10 minutes apart). Anything else is final.
-                        if((await pool.query(`SELECT 1 FROM scheduler.engagement_actions WHERE claim_key=$1 AND NOT (status='failed_before_action'
-                          AND updated_at<now()-interval '10 minutes' AND COALESCE((result->>'retries')::int,0)<3)`,[commentKey(platform,item.id)])).rowCount)continue;
+                        // failed_before_action posted nothing and may be retried; uncertain Instagram/Facebook comments get pin-only retries
+                        // (3 times, 10 minutes apart). TikTok uncertain stays final.
+                        if((await pool.query(`SELECT 1 FROM scheduler.engagement_actions WHERE claim_key=$1 AND NOT ((status='failed_before_action' OR (status='uncertain_review' AND $2))
+                          AND updated_at<now()-interval '10 minutes' AND COALESCE((result->>'retries')::int,0)<3)`,[commentKey(platform,item.id),platform!=='tiktok'])).rowCount)continue;
                         const device=(await loadRegisteredDevices()).find(d=>d.udid===item.input.deviceUdid);
                         if(!device||device.disabled||device.coordinateProfile!=='iphone15promax'||!readiness.get(device.udid))continue;
                         const base=`http://127.0.0.1:${device.wdaLocalPort??8100}`;
                         const commentSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(8*60_000)]);
                         const driver=platform==='instagram'?new InstagramRelease(base,commentSignal):platform==='facebook'?new FacebookComments(base,commentSignal):new TikTokRelease(base,commentSignal);
                         const comment=driver.commentOnPost.bind(driver);
-                        driver.commentOnPost=async(input:PostingInput,text:string,claim:()=>Promise<void>)=>{
+                        driver.commentOnPost=async(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly?:boolean)=>{
                             // runPostComment already owns the phone advisory lock here.
                             await new NativeMuteGuard(base,commentSignal).prepare();
-                            return comment(input,text,claim);
+                            return comment(input,text,claim,existingOnly);
                         };
                         try{await runPostComment(pool,item.id,platform,driver);}
                         // Close the app after every comment job: TikTok leaves its comment menu open after the Pin check (Oct 7).
