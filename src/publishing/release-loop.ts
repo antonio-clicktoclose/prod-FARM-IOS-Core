@@ -121,8 +121,8 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                 return;
             }
             await health.tick({controlMode:'wda',state:'running',blockers:[]});
-            const driverFor = async (item: any) => {
-                const releaseSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(25*60000)]);
+            const driverFor = async (item: any, timeoutMs = 25*60000) => {
+                const releaseSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(timeoutMs)]);
                 const device = (await loadRegisteredDevices()).find(d => d.udid === item.input.deviceUdid);
                 if (!device || device.disabled) throw new Error('Phone is not enabled');
                 if (!readiness.get(device.udid)) throw new Error('Native phone driver is unavailable');
@@ -150,7 +150,8 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                 WHERE item_id=ANY($1::uuid[]) AND state='needs_review' AND share_claimed_at IS NOT NULL
                 AND updated_at<now()-interval '10 minutes'
                 AND COALESCE((result->>'receiptChecks')::int,CASE WHEN result ? 'lastReceiptCheck' THEN 1 ELSE 0 END)<3`,[allowed]);
-            for (const row of receiptChecks.rows) await timed('receipt check '+row.item_id.slice(0,8),()=>store.reconcilePending(driverFor, row.item_id));
+            // Read-only receipt checks get 8 minutes, never the 25-minute posting budget (Oct 8: one held the phone 25 min).
+            for (const row of receiptChecks.rows) await timed('receipt check '+row.item_id.slice(0,8),()=>store.reconcilePending((item:any)=>driverFor(item,8*60000), row.item_id));
             // One comment job per tick, after due video releases. Never delay an imminent slot.
             {
                 const candidates=await pool.query(`SELECT i.* FROM scheduler.publishing_items i
