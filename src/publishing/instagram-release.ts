@@ -206,6 +206,26 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
             // The owner Trial viewer can omit the Watch button. Read the saved
             // link setting without changing it and keep that limit in the receipt.
             await this.tapElement('accessibility id','more-options-button','Read saved related Reel');
+            // Oct 8: the first Hormozi Reel posted with no link. A published Reel offers "Link a reel" when none is
+            // saved; add it there (the same picker as the composer), then read it back below.
+            if(await this.visible('predicate string','label == "Link a reel" AND visible == 1')){
+                await this.tapElement('predicate string','label == "Link a reel" AND visible == 1','Add missing related Reel');
+                await this.waitFor('accessibility id','Select a reel','Owned Reel picker');
+                let found;
+                for(let attempt=0;;attempt++){
+                    try{found=await locateRelatedCover(Buffer.from((await this.request('/screenshot')).value,'base64'),related);break;}
+                    catch(e){if(attempt>=10)throw e;await this.sleep(1500);}
+                }
+                await this.tapPoint(found.x,found.y);
+                await this.waitFor('accessibility id','Edit linked reel','Link title');
+                const rows=(await this.request(this.session+'/elements',{using:'class name',value:'XCUIElementTypeTextField'})).value;
+                if(rows.length!==1)throw Error('Related Reel title is ambiguous');
+                await this.request(this.session+'/element/'+this.id(rows[0])+'/value',{value:[related.label]});
+                await this.tapElement('accessibility id','OK','Save related Reel');
+                await this.sleep(2000);
+                receipts.instagram!.evidence+='; related Reel was missing on the live post and was added from its menu';
+                await this.tapElement('accessibility id','more-options-button','Read saved related Reel');
+            }
             await this.tapElement('predicate string','label == "Edit linked reel" AND visible == 1','Saved related Reel');
             const label=await this.read('class name','XCUIElementTypeTextField','value','Saved related Reel title');
             await this.tapElement('accessibility id','Cancel','Leave saved link unchanged');
