@@ -18,7 +18,8 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
  private async nodes(){return visibleNativeNodes(String((await this.request(this.session+'/source')).value));}
  private async selectAlbum(name:string){
   let last='';
-  for(let pass=0;pass<6;pass++){
+  // One PF album per upload (Oct 8: 60+). Scroll until found or the list stops moving.
+  for(let pass=0;pass<40;pass++){
    // The list renders after the album-list tap; wait for it once instead of reading too early.
    if(pass===0)await this.waitFor('predicate string','name == "id.creation.photolibrary.album.cell" AND visible == 1','Native album list',10_000);
    else if(!(await this.nodes()).some(n=>n.name==='id.creation.photolibrary.album.cell'))throw Error('Native album list changed');
@@ -27,10 +28,10 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
    if(rows.length===1){const r=(await this.request(this.session+'/element/'+this.id(rows[0])+'/rect')).value;
     if(r.y>=90&&r.y+r.height<=850){await this.tapPoint(r.x+r.width/2,r.y+r.height/2);return;}
     // Found but near an edge (many PF albums): nudge it toward the middle, then look again. Never tap off-screen.
-    if(pass===5)throw Error('YouTube source album is outside the visible list');
+    if(pass===39)throw Error('YouTube source album is outside the visible list');
     await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:r.y<90?300:700,toX:215,toY:r.y<90?600:400,duration:.4});await this.sleep(600);continue;}
    const current=(await this.nodes()).filter(n=>n.type==='XCUIElementTypeCell'&&n.name==='id.creation.photolibrary.album.cell').map(n=>n.label).join('|');
-   if(!current||current===last||pass===5)throw Error('YouTube source album was not reached; import was not repeated');last=current;
+   if(!current||current===last||pass===39)throw Error('YouTube source album was not reached; import was not repeated');last=current;
    await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:780,toX:215,toY:250,duration:.4});await this.sleep(500);
   }
  }

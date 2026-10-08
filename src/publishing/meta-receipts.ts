@@ -29,7 +29,12 @@ export async function metaReceipts(caption: string) {
     // Hook variants share a caption (Oct 8: heystevetan-C matched yesterday's heystevetan-A). Newest first.
     const reels = ((await g(s.page + '/video_reels', { fields: 'description,permalink_url,created_time', limit: '25', access_token: token })).data ?? [])
         .sort((a: any, b: any) => Date.parse(b.created_time ?? 0) - Date.parse(a.created_time ?? 0));
-    for (const r of reels) if (normalizeText(r.description ?? '') === want) { out.facebook = { verified: true, source: 'facebook_graph', url: 'https://www.facebook.com' + r.permalink_url, evidence: 'Exact full caption on Antonio Revenue Reels via the Facebook Graph API' }; break; }
+    // Facebook turns @handles into Page names (Oct 8: "@antoniorevenue" became "Antonio | More Leads & Sales..."),
+    // so match the caption text around each mention, in order, on the newest Reel that has it.
+    const parts = want.split(/@[A-Za-z0-9._]+/).map(t => t.trim()).filter(Boolean);
+    const sameText = (d: string) => { if (d === want) return true; if (parts.length < 2) return false; let at = 0;
+        for (const part of parts) { const i = d.indexOf(part, at); if (i < 0) return false; at = i + part.length; } return d.startsWith(parts[0]!); };
+    for (const r of reels) if (sameText(normalizeText(r.description ?? ''))) { out.facebook = { verified: true, source: 'facebook_graph', url: 'https://www.facebook.com' + r.permalink_url, evidence: 'Exact full caption on Antonio Revenue Reels via the Facebook Graph API' }; break; }
     if (!out.facebook && reels[0] && !normalizeText(reels[0].description ?? '')) out.facebookMissingCaption = true;
     return out;
 }
