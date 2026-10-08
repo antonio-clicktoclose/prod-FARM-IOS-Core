@@ -304,7 +304,10 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
             const crop=await sharp(image).extract({left:180,top:1500,width:1020,height:210}).resize(2040,420).greyscale().threshold(200).png().toBuffer();
             return (await recognizeWords(crop)).map(w=>({...w,x:180+w.x/2,y:1500+w.y/2,width:w.width/2,height:w.height/2}));
         };
-        if(!screen.words.some(w=>/^Comments0$/.test(w.text))&&!screen.words.some(w=>w.text==='Comments'&&screen.words.some(n=>n.text==='0'&&Math.abs(n.y-w.y)<20)))throw new Error('Expected empty comments before first comment');
+        const emptyComments=(words:typeof screen.words)=>words.some(w=>/^Comments0$/.test(w.text))||words.some(w=>w.text==='Comments'&&words.some(n=>n.text==='0'&&Math.abs(n.y-w.y)<20));
+        // Oct 8 06:47: the first frame came before the sheet finished opening; the failure frame shows Comments 0.
+        for(let read=0;read<3&&!emptyComments(screen.words);read++){await this.sleep(700);screen=await this.screen();}
+        if(!emptyComments(screen.words))throw new Error('Expected empty comments before first comment');
         if(!locateComment(screen.words,text,1450,1850)){
             if(!screen.words.some(w=>w.y>1450&&w.y<1850&&/^comment/.test(w.text))&&!(await draftWords(screen.image)).some(w=>/^comment\.{3}$/.test(w.text)))throw new Error('TikTok comment draft is not empty or unreadable');
             await this.request(this.session+'/wda/keys',{value:[text]});
