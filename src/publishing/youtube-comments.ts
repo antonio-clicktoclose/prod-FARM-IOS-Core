@@ -41,6 +41,7 @@ export class YouTubeComments extends PreparedYouTubeRelease {
             if(String((await this.request(this.session+'/element/'+box+'/attribute/value')).value??'').trim())throw new Error('YouTube comment draft is not empty');
             await this.assertInputApp();
             await this.request(this.session+'/element/'+box+'/click',{});
+            await this.sleep(800); // Oct 8 01:43: keys sent right after the tap were lost and the box stayed empty.
             await this.request(this.session+'/wda/keys',{value:[text]});
             // A comment that wraps to two lines replaces the text view (Oct 7 16:49, stale element): find it again.
             await this.sleep(500);
