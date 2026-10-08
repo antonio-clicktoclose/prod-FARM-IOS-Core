@@ -282,13 +282,18 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
             await this.tapPoint((add.x+add.width/2)/3,(add.y-65)/3);
         } else {
             // White text over moving video needs a bounded high-contrast scan.
+            // Oct 8 05:59: one frame missed it (moving video behind the label) while a later frame read it. Rescan fresh frames.
             let control:{x:number;y:number}|undefined;
-            for(const top of [...new Set([...(add?[Math.round(add.y)-20]:[]),1770,1910])]){
-                const crop=await sharp(view.image).extract({left:1120,top,width:165,height:85}).resize(660,340).greyscale().threshold(220).negate().extend({top:30,bottom:30,left:30,right:30,background:'white'}).png().toBuffer();
-                const words=await recognizeWords(crop);
-                if(words.map(w=>w.text).join(' ')==='Add 1st'){
-                    const w=words[0];control={x:(1120+(w.x-30+w.width/2)/4)/3,y:(top+(w.y-30)/4-65)/3};break;
+            for(let frame=0;frame<4&&!control;frame++){
+                const image=frame===0?view.image:Buffer.from((await this.request('/screenshot')).value,'base64');
+                for(const top of [...new Set([...(add?[Math.round(add.y)-20]:[]),1730,1770,1810,1870,1910])]){
+                    const crop=await sharp(image).extract({left:1120,top,width:165,height:85}).resize(660,340).greyscale().threshold(220).negate().extend({top:30,bottom:30,left:30,right:30,background:'white'}).png().toBuffer();
+                    const words=await recognizeWords(crop);
+                    if(words.map(w=>w.text).join(' ')==='Add 1st'){
+                        const w=words[0];control={x:(1120+(w.x-30+w.width/2)/4)/3,y:(top+(w.y-30)/4-65)/3};break;
+                    }
                 }
+                if(!control)await this.sleep(700);
             }
             if(!control)throw new Error('TikTok first-comment control is not visible; review existing comments');
             await this.tapPoint(control.x,control.y);
