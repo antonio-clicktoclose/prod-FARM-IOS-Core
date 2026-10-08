@@ -58,14 +58,19 @@ try{
  // order and shift later. One slot per video; unposted videos are shuffled among themselves.
  const groups=[...new Set(eligible.map(i=>i.media.sha256))].map(hash=>eligible.filter(i=>i.media.sha256===hash));
  for(let n=groups.length-1;n>0;n--){const k=randomInt(n+1);[groups[n],groups[k]]=[groups[k]!,groups[n]!];}
- const hour=3600000,next=(()=>{const t=new Date(Date.now()+20*60000);t.setUTCSeconds(0,0);const s=new Date(t);s.setUTCMinutes(minute);return s<t?s.getTime()+hour:s.getTime();})();
+ const hour=3600000,every=Number(process.argv.find(v=>v.startsWith('--every-hours='))?.split('=')[1]??3)*hour;
+ if(!(every>=hour))throw Error('--every-hours must be 1 or more');
+ // The first free slot is at least `every` after the latest post that ran or is about to (Oct 7: hourly runs had
+ // pulled the queue forward to the next hour each time, giving posts at 21:22, 22:22 and 23:22).
+ const recent=[...releases.values()].map((r:any)=>r.state!=='cancelled'?new Date(r.run_at).getTime():NaN)
+   .filter(t=>t<=Date.now()+20*60000&&t>Date.now()-every);
+ const earliest=Math.max(Date.now()+20*60000,recent.length?Math.max(...recent)+every:0);
+ const next=(()=>{const t=new Date(earliest);t.setUTCSeconds(0,0);const s=new Date(t);s.setUTCMinutes(minute);return s<t?s.getTime()+hour:s.getTime();})();
  const runAtOf=(i:any)=>new Date(releases.get(i.id).run_at).getTime();
  // Posts due within 20 minutes stay where they are; later ones form the shifting queue in their current order.
  // Only posts this script scheduled may shift. Posts other tools armed for a set time keep it, and their hours are skipped.
  const owned=(i:any)=>!!i.results?.autopilotBacklog;
  const shifting=keptArmed.filter(i=>owned(i)&&runAtOf(i)>=Date.now()+20*60000&&!releases.get(i.id).share_claimed_at);
- const every=Number(process.argv.find(v=>v.startsWith('--every-hours='))?.split('=')[1]??3)*hour;
- if(!(every>=hour))throw Error('--every-hours must be 1 or more');
  // Keep the same gap around posts other tools armed for a set time.
  const fixedTimes=keptArmed.filter(i=>!owned(i)).map(runAtOf);
  const keptGroups=[...new Set(shifting.sort((a,b)=>runAtOf(a)-runAtOf(b)).map(i=>i.media.sha256))].map(hash=>shifting.filter(i=>i.media.sha256===hash));
