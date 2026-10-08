@@ -5,7 +5,8 @@ export function locateComment(words:ScreenWord[],text:string,minY:number,maxY:nu
  const expected=text.split(/\s+/).map(token).filter(Boolean);
  const candidates=words.filter(w=>w.y>=minY&&w.y<=maxY&&w.x>=150&&token(w.text));
  for(let i=0;i<=candidates.length-expected.length;i++) {
-  if(expected.every((t,n)=>token(candidates[i+n].text)===t || (t==='ai'&&candidates[i+n].text==='Al')))return candidates.slice(i,i+expected.length);
+  // OCR reads a capital I after A as a lowercase l, also inside words ("Al-built", Oct 7): read "Al" not followed by a lowercase letter as "AI".
+  if(expected.every((t,n)=>token(candidates[i+n].text)===t || token(candidates[i+n].text.replace(/Al(?![a-z])/g,'AI'))===t))return candidates.slice(i,i+expected.length);
  }
  return null;
 }
