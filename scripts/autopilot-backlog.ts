@@ -39,6 +39,7 @@ try{
   else if(r&&!['armed','needs_review','cancelled'].includes(r.state))reason='Release is '+r.state;
   else if(i.results?.preparedNative)reason='Prepared composer item; re-prepare before arming';
   else if(i.results?.hourlyRecoveryExclusion||i.results?.externalYouTubeDelivery)reason='Duplicate check or earlier delivery recorded';
+  else if(/caption already exists/i.test(String(r?.result?.error??'')))reason='Same caption is already on TikTok (hook variant); needs a reworded caption or a skip';
   else if((i.results?.autopilotBacklog?.attempts??0)>=maxAttempts)reason=`Rescheduled ${maxAttempts} times; needs a person`;
   else if(platforms.includes('youtube')&&!(review?.coverReviewed&&review.sourceSha256===i.media.sha256&&review.relatedVideoId===i.input.youtube?.publishing?.relatedVideoId))reason='Short needs a frame-zero cover review or a Mac-made cover';
   else if(platforms.includes('tiktok')&&platforms.length>1)reason='Legacy mixed TikTok item';

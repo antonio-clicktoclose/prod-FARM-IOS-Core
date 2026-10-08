@@ -26,7 +26,9 @@ export async function metaReceipts(caption: string) {
     const out: { instagram?: Receipt; facebook?: Receipt; facebookMissingCaption?: boolean } = {};
     if (ig) for (const m of (await g(ig + '/media', { fields: 'caption,permalink,media_product_type', limit: '25', access_token: token })).data ?? [])
         if (normalizeText(m.caption ?? '') === want) { out.instagram = { verified: true, source: 'instagram_graph', url: m.permalink, evidence: 'Exact full caption on @antoniorevenue via the Instagram Graph API' }; break; }
-    const reels = (await g(s.page + '/video_reels', { fields: 'description,permalink_url,created_time', limit: '25', access_token: token })).data ?? [];
+    // Hook variants share a caption (Oct 8: heystevetan-C matched yesterday's heystevetan-A). Newest first.
+    const reels = ((await g(s.page + '/video_reels', { fields: 'description,permalink_url,created_time', limit: '25', access_token: token })).data ?? [])
+        .sort((a: any, b: any) => Date.parse(b.created_time ?? 0) - Date.parse(a.created_time ?? 0));
     for (const r of reels) if (normalizeText(r.description ?? '') === want) { out.facebook = { verified: true, source: 'facebook_graph', url: 'https://www.facebook.com' + r.permalink_url, evidence: 'Exact full caption on Antonio Revenue Reels via the Facebook Graph API' }; break; }
     if (!out.facebook && reels[0] && !normalizeText(reels[0].description ?? '')) out.facebookMissingCaption = true;
     return out;

@@ -61,7 +61,12 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
    await this.tapElement('predicate string','name == "id.elements.components.metadata_editor.altered_content_picker" AND label == "AI use" AND visible == 1','AI use');
    await this.tapElement('accessibility id','No','AI use No');
    await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Back to Attributes');
-   words=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
+   // Oct 8 11:30: the first frame after Back came before the screen settled; the saved frame reads No. Re-read it.
+   for(let read=0;read<4;read++){
+    if(read)await this.sleep(700);
+    words=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
+    if(words.filter(w=>w.text==='No'&&w.y>300&&w.y<500).length===1)break;
+   }
    if(words.filter(w=>w.text==='No'&&w.y>300&&w.y<500).length!==1)throw Error('YouTube AI use did not save; no Upload');
   }
   await this.tapElement('accessibility id','Add tags','Native tags');
