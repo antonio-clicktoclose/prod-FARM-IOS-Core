@@ -1,4 +1,5 @@
-/** Move every unposted video to the front of the hourly queue and arm it; shift scheduled posts later. Safe hourly.
+/** Move every unposted video to the front of the queue and arm it; shift scheduled posts later. Safe hourly.
+ * One video per slot, slots --every-hours apart (default 3; Antonio, Oct 7 20:40: views were dropping at hourly posting).
  * Lanes: social (Instagram with linked Facebook, and TikTok) at minute 22; youtube (Shorts) at minute 52.
  * Missed and failed-before-Share posts take the next slots; armed future posts keep their order and shift later.
  * Dry run by default; pass --apply to write. Never touches a release with a Share claim, a receipt or a prepared
@@ -63,7 +64,10 @@ try{
  // Only posts this script scheduled may shift. Posts other tools armed for a set time keep it, and their hours are skipped.
  const owned=(i:any)=>!!i.results?.autopilotBacklog;
  const shifting=keptArmed.filter(i=>owned(i)&&runAtOf(i)>=Date.now()+20*60000&&!releases.get(i.id).share_claimed_at);
- const fixedHours=new Set(keptArmed.filter(i=>!owned(i)).map(i=>Math.floor(runAtOf(i)/hour)));
+ const every=Number(process.argv.find(v=>v.startsWith('--every-hours='))?.split('=')[1]??3)*hour;
+ if(!(every>=hour))throw Error('--every-hours must be 1 or more');
+ // Keep the same gap around posts other tools armed for a set time.
+ const fixedTimes=keptArmed.filter(i=>!owned(i)).map(runAtOf);
  const keptGroups=[...new Set(shifting.sort((a,b)=>runAtOf(a)-runAtOf(b)).map(i=>i.media.sha256))].map(hash=>shifting.filter(i=>i.media.sha256===hash));
  // A Short joins the hour of the same video's armed Instagram/TikTok slot ("post all at once"); others get lane slots.
  const socialSlot=new Map<string,number>();
@@ -71,7 +75,7 @@ try{
   socialSlot.set(j.media.sha256,Math.min(socialSlot.get(j.media.sha256)??Infinity,runAtOf(j)));
  let laneSlot=0;const slotFor=(sha:string)=>{
   if(socialSlot.has(sha))return new Date(socialSlot.get(sha)!).toISOString();
-  let t=next+(laneSlot++)*hour;while(fixedHours.has(Math.floor(t/hour)))t=next+(laneSlot++)*hour;
+  let t=next+(laneSlot++)*every;while(fixedTimes.some(f=>Math.abs(f-t)<every))t=next+(laneSlot++)*every;
   return new Date(t).toISOString();};
  for(const group of groups){
   const runAt=slotFor(group[0].media.sha256);
