@@ -474,7 +474,7 @@ import {contentGroups} from './groups.mjs';
             h('div', {class:'banner-main'}, h('strong', {text:`Video plan: every ${state.cadence.videoIntervalMinutes} minutes across all four platforms.`}), h('span', {text:`${state.cadence.videosPerDayPerPlatform} planned per platform daily. Stories at 9 a.m. and 5 p.m. Pacific.`})),
             h('div', {class:'banner-note',text:state.cadence.runtime?.controlMode === 'mirroring'
                 ? `${state.cadence.runtime?.videoPostingRunning ? 'Verified video posting is running.' : state.cadence.runtime?.automaticPostingRequested ? 'Automatic schedule checks are on. Publishing is blocked.' : 'Automatic posting is paused.'} Keep the physical phone locked and the Mac awake and unlocked. ${state.cadence.runtime?.releaseWorker?.blockers?.join(' ') || state.cadence.mirroring?.reason || 'Checking the Mac controller.'} ${state.cadence.audio?.reason || 'Phone audio mute is not verified. Keep playback stopped.'}`
-                : state.cadence.runtime?.videoPostingRunning ? 'The video worker and native driver are running. Only armed content can publish. YouTube and automatic Stories still need their publishers.' : 'Video posting is paused. The release worker and native driver must be restored. YouTube and automatic Stories still need their publishers.'}));
+                : state.cadence.runtime?.videoPostingRunning ? 'The video worker and native driver are running. Only armed content can publish. A Story posts only after you approve its five native previews.' : 'Video posting is paused. The release worker and native driver must be restored. A Story posts only after you approve its five native previews.'}));
         else fill(cadence,h('strong',{text:'Could not confirm the configured cadence.'}));
         const audio=state.cadence?.audio;
         if(state.cadence?.mirroring?.controlReady&&audio?.muteArmed===true&&audio?.ready!==true&&audio?.serviceGeneration) {
@@ -547,9 +547,9 @@ import {contentGroups} from './groups.mjs';
         if(!jobs.length)return null;
         return h('details',{},h('summary',{text:'Native Story previews and approvals'}),jobs.map(job=>{
             if(job.state!=='waiting_native_approval') {
-                const canPilot=job.state==='armed'&&!job.pilot&&Date.parse(job.run_at)>Date.now()&&Date.parse(job.run_at)<=Date.now()+10*60_000;
-                return h('div',{},h('p',{text:`${job.title}: ${job.state.replace(/_/g,' ')}.`}),canPilot?h('button',{type:'button',class:'btn btn-small',disabled:!state.automation.foregroundAllowed,onclick:async()=>{
-                    if(!window.confirm('Publish these five approved frames once through the worker? This uses Mirroring and needs both Instagram and Facebook receipts.'))return;
+                const canPilot=job.state==='armed'&&!job.pilot&&Date.parse(job.run_at)>Date.now();
+                return h('div',{},h('p',{text:`${job.title}: ${job.state.replace(/_/g,' ')}.`}),canPilot?h('button',{type:'button',class:'btn btn-small',disabled:state.cadence?.runtime?.controlMode==='mirroring'&&!state.automation.foregroundAllowed,onclick:async()=>{
+                    if(!window.confirm('Publish these five approved frames once through the worker? Each frame needs both Instagram and Facebook receipts.'))return;
                     try{await postJson(`${API}/stories/native/${job.id}/pilot`,{});await refresh();}catch(error){window.alert(error.message);}
                 }},'Post one Story worker pilot'):null);
             }

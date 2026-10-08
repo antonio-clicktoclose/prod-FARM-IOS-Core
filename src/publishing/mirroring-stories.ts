@@ -9,6 +9,10 @@ import {reviewStoryDraft} from './story-policy.js';
 import type {ReleaseMedia} from './instagram-release.js';
 import type {PostingInput} from './model.js';
 export interface NativeStoryFrame {text:string;assetRef:string;sourceSha256:string;sourcePath?:string;media:ReleaseMedia;previewPath:string;previewSha256:string}
+/** Any phone driver that builds one frame, claims, taps Share once and returns both destination receipts. */
+export interface StoryFrameDriver {publishFrame(frame:NativeStoryFrame,claim:()=>Promise<void>):Promise<any>;leaveVideo():Promise<void>}
+/** App receipts (Mac Mirroring flow) or Graph receipts (iPhone WDA flow), on both Instagram and Facebook. */
+export function storyFrameVerified(r:any){return r?.instagram?.verified===true&&['instagram_app','instagram_graph'].includes(r.instagram.source)&&r?.facebook?.verified===true&&['facebook_app','facebook_graph'].includes(r.facebook.source);}
 export interface NativeStoryFlow {version:1;prepare:NativePhase;instagramReceipt:NativePhase;facebookReceipt:NativePhase;submit:{label:'Share';context:string[];minY:number;maxY:number}}
 const validHash=(s:unknown)=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
 async function checkedLocal(file:string,hash:string){
@@ -81,15 +85,15 @@ export class NativeStoryStore {
         if(r.rowCount!==1)throw new Error('Native Story approval changed');
     }
     async requestPilot(id:string){
-        const r=await this.pool.query("UPDATE scheduler.mirroring_story_jobs SET pilot=true WHERE id=$1 AND state='armed' AND approved_at IS NOT NULL AND sequence_id IN(SELECT id FROM scheduler.story_sequences WHERE run_at>now() AND run_at<=now()+interval '10 minutes') AND NOT EXISTS(SELECT 1 FROM scheduler.mirroring_story_frames WHERE job_id=$1) RETURNING id",[id]);
-        if(r.rowCount!==1)throw new Error('Choose an approved native sequence in the next ten minutes without any Share claim');
+        const r=await this.pool.query("UPDATE scheduler.mirroring_story_jobs SET pilot=true WHERE id=$1 AND state='armed' AND approved_at IS NOT NULL AND sequence_id IN(SELECT id FROM scheduler.story_sequences WHERE run_at>now()) AND NOT EXISTS(SELECT 1 FROM scheduler.mirroring_story_frames WHERE job_id=$1) RETURNING id",[id]);
+        if(r.rowCount!==1)throw new Error('Choose an approved future native sequence without any Share claim');
     }
     async list(){return (await this.pool.query('SELECT j.id,j.sequence_id,j.revision,j.state,j.approved_at,j.pilot,j.result,s.run_at,s.title FROM scheduler.mirroring_story_jobs j JOIN scheduler.story_sequences s ON s.id=j.sequence_id ORDER BY s.run_at DESC LIMIT 100')).rows;}
-    async tick(fingerprint:string,driverFor:(row:any)=>Promise<NativeStoryDriver>,pilotOnly=false,certificateFlow='stories'){
+    async tick(fingerprint:string,driverFor:(row:any)=>Promise<StoryFrameDriver>,pilotOnly=false,certificateFlow='stories'){
         const due=(await this.pool.query(`SELECT j.*,s.device_udid,s.run_at,s.draft FROM scheduler.mirroring_story_jobs j JOIN scheduler.story_sequences s ON s.id=j.sequence_id
             WHERE j.state='armed' AND j.approved_at IS NOT NULL AND s.run_at<=now() AND j.fingerprint=$1 AND ($2=false OR j.pilot=true) ORDER BY s.run_at LIMIT 1`,[fingerprint,pilotOnly])).rows;
         for(const row of due){
-            const c=await this.pool.connect();let locked=false;let driver:NativeStoryDriver|undefined;
+            const c=await this.pool.connect();let locked=false;let driver:StoryFrameDriver|undefined;
             try{
                 locked=(await c.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) locked',[row.device_udid])).rows[0].locked;if(!locked)continue;
                 if(new Date(row.run_at).getTime()<Date.now()-10*60_000)throw new Error('Story slot missed. Review a new time');
@@ -101,7 +105,7 @@ export class NativeStoryStore {
                         const r=await c.query("INSERT INTO scheduler.mirroring_story_frames(job_id,run_at,frame,state) VALUES($1,$2,$3,'claimed') ON CONFLICT DO NOTHING RETURNING frame",[row.id,row.run_at,frame]);
                         if(r.rowCount!==1)throw new Error('Story Share was already attempted. Never repeat a frame');
                     });
-                    if(receipts.instagram?.verified!==true||receipts.instagram?.source!=='instagram_app'||receipts.facebook?.verified!==true||receipts.facebook?.source!=='facebook_app')throw new Error('Each Story frame needs both native receipts');
+                    if(!storyFrameVerified(receipts))throw new Error('Each Story frame needs both native receipts');
                     await c.query("UPDATE scheduler.mirroring_story_frames SET state='published',receipts=$4 WHERE job_id=$1 AND run_at=$2 AND frame=$3",[row.id,row.run_at,frame,JSON.stringify(receipts)]);
                 }
                 await c.query("UPDATE scheduler.mirroring_story_jobs SET state='published',result=$2 WHERE id=$1",[row.id,JSON.stringify({nativeFlowFingerprint:fingerprint,framesVerified:5,checkedAt:new Date().toISOString()})]);
