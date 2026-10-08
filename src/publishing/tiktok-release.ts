@@ -251,9 +251,11 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         // Open our grid once. Waiting for publication must not repeatedly tap
         // through the app or submit the video again.
         await this.profile();
-        // Oct 8 14:28: a 45 s video was still uploading (83%) when a 60 s wait ended. Allow 4 minutes of read-only checks.
-        const deadline=Date.now()+4*60_000;
-        while(Date.now()<deadline){
+        // Oct 8 14:28: a 45 s video was still uploading (83%) when a 60 s wait ended. Wait 4 minutes, and keep waiting
+        // (up to 15 minutes in all) while the grid still shows an upload percentage, so a slow upload is never called failed.
+        const started=Date.now();let deadline=started+4*60_000;
+        const uploading=async()=>{try{const {words}=await this.screen();return words.some(w=>/^\d{1,3}%$/.test(w.text)&&w.y>1000&&w.y<1800);}catch{return false;}};
+        while(Date.now()<deadline||(Date.now()<started+15*60_000&&await uploading())){
             try {
                 // With a sibling caption, only a new matching tile proves this upload (Oct 8: hook variants share captions).
                 if((await this.matchingPosts()).length>(this.allowSiblingCaption?this.baselineMatches:0))return {tiktok:{verified:true,source:'tiktok_app',evidence:'Full caption matched in the published video grid on @'+this.input!.targets[0].account.replace(/^@/,'')+(this.allowSiblingCaption?` (matching posts rose above ${this.baselineMatches} before Post)`:''),checkedAt:new Date().toISOString()}};
