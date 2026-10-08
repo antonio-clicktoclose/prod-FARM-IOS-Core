@@ -75,12 +75,13 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
  }
  private async related(){
   await this.metadataRow('Related video');await this.waitFor('accessibility id','Select video','Owned video picker');let last='';
-  for(let n=0;n<5;n++){
+  // Newest videos list first; every new Short pushes the long-form further down (Oct 7 22:29 ran out at 5 scrolls).
+  for(let n=0;n<25;n++){
    const nodes=await this.nodes(),matching=nodes.filter(n=>n.label?.startsWith(reviewedLongForm.title+' - 15 minutes, 57 seconds - Go to channel - '+reviewedLongForm.owner));
    const rows=[...new Map(matching.map(n=>[[n.x,n.y,n.width,n.height,n.label].join('|'),n])).values()];
    if(rows.length){if(rows.length!==1)throw Error('Related long-form video is ambiguous');const r=rows[0]!;await this.tapPoint(r.x+r.width/2,r.y+r.height/2);return;}
    const current=nodes.filter(n=>n.name==='eml.cvr').map(n=>n.label).join('|');
-   if(!current||current===last||n===4)throw Error('Reviewed long-form video was not reached; no Upload');last=current;
+   if(!current||current===last||n===24)throw Error('Reviewed long-form video was not reached; no Upload');last=current;
    await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:780,toX:215,toY:200,duration:.5});await this.sleep(500);
   }
  }
