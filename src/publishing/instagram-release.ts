@@ -369,7 +369,8 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         // One navigation pass. A delayed result stays in review for a later read-only check.
         await this.sleep(Math.min(timeoutMs, 15_000));
         // Prefer tap-free Graph receipts (Oct 7: in-app grids lagged or were covered by prompts).
-        const graph = await this.graphReceipts(input, Math.min(timeoutMs, 3 * 60_000));
+        // Oct 8: Graph listed a 14:32 Reel just as a 3-minute wait ended. Allow 6 minutes.
+        const graph = await this.graphReceipts(input, Math.min(timeoutMs, 6 * 60_000));
         if (graph) return graph;
         try {
                 await this.dismissPromoSheets();

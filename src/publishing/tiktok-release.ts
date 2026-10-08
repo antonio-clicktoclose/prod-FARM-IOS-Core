@@ -251,7 +251,8 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         // Open our grid once. Waiting for publication must not repeatedly tap
         // through the app or submit the video again.
         await this.profile();
-        const deadline=Date.now()+60_000;
+        // Oct 8 14:28: a 45 s video was still uploading (83%) when a 60 s wait ended. Allow 4 minutes of read-only checks.
+        const deadline=Date.now()+4*60_000;
         while(Date.now()<deadline){
             try {
                 // With a sibling caption, only a new matching tile proves this upload (Oct 8: hook variants share captions).
