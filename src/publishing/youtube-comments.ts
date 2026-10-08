@@ -32,6 +32,9 @@ export class YouTubeComments extends PreparedYouTubeRelease {
         await this.start(YOUTUBE);await this.sleep(2500);
         await this.request(this.session+'/url',{url:receipt.url});
         await this.waitFor('predicate string','label == "Go to channel @antoniorevenue" AND visible == 1','Own Short',20_000);
+        // Record whether the Short shows its related long-form link (Antonio, Oct 8: confirm YouTube linking too).
+        const related=visibleNativeNodes((await this.request(this.session+'/source')).value).find(n=>n.name==='id.reel_multi_format_link')?.label;
+        const linkNote=related?` Related link shown: "${related}".`:' Related long-form link NOT shown on the Short.';
         await this.tapElement('accessibility id','id.reel_comment_button','View comments');
         await this.sleep(2500);
         let own=await this.ownComment(text);let claimed=false;
@@ -52,7 +55,7 @@ export class YouTubeComments extends PreparedYouTubeRelease {
             for(let n=0;n<15&&!own;n++){await this.sleep(1000);own=await this.ownComment(text);}
             if(!own)throw new Error('YouTube comment receipt missing; never post again automatically');
         }
-        if(own.label.startsWith('Pinned by @antoniorevenue'))return {status:'already_pinned',commentVerified:true,pinned:true,evidence:'Exact own comment on the Short reads "Pinned by @antoniorevenue".'};
+        if(own.label.startsWith('Pinned by @antoniorevenue'))return {status:'already_pinned',commentVerified:true,pinned:true,evidence:'Exact own comment on the Short reads "Pinned by @antoniorevenue".'+linkNote};
         // The "..." menu button has no accessibility element; it sits at the comment row's top-right corner.
         await this.assertInputApp();
         await this.tapPoint(own.x+own.width-24,own.y+24);
@@ -65,6 +68,6 @@ export class YouTubeComments extends PreparedYouTubeRelease {
         await this.tapElement('predicate string','name == "id.ui.confirmation_dialog.confirm.button" AND label == "Pin" AND visible == 1','Confirm pin');
         for(let n=0;n<10;n++){await this.sleep(1000);own=await this.ownComment(text);if(own?.label.startsWith('Pinned by @antoniorevenue'))break;}
         if(!own?.label.startsWith('Pinned by @antoniorevenue'))throw new Error('YouTube pin readback failed');
-        return {status:'pinned',commentVerified:true,pinned:true,evidence:'Exact own comment on the Short reads "Pinned by @antoniorevenue".'};
+        return {status:'pinned',commentVerified:true,pinned:true,evidence:'Exact own comment on the Short reads "Pinned by @antoniorevenue".'+linkNote};
     }
 }
