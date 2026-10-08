@@ -132,7 +132,12 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                 if(item.input.targets.length===1&&item.input.targets[0].platform==='youtube')return new YouTubeRelease(`http://127.0.0.1:${device.wdaLocalPort ?? 8100}`,releaseSignal,item,directImports);
                 if(item.results?.preparedNative?.kind==='tiktok') return new PreparedTikTokRelease(`http://127.0.0.1:${device.wdaLocalPort ?? 8100}`,releaseSignal,item);
                 if (item.input.targets.length === 1 && item.input.targets[0].platform === 'tiktok')
-                    return new TikTokRelease(`http://127.0.0.1:${device.wdaLocalPort ?? 8100}`, releaseSignal,directImports);
+                {
+                    // A hook variant may reuse a caption another video of ours already posted (Antonio, Oct 8: post everything).
+                    const sibling=(await pool.query(`SELECT 1 FROM scheduler.publishing_items s WHERE s.id<>$1 AND s.media->>'sha256'<>$2
+                      AND s.input->>'caption'=$3 AND s.input->'targets'->0->>'platform'='tiktok' AND s.status='published' LIMIT 1`,[item.id,item.media.sha256,item.input.caption])).rowCount===1;
+                    return new TikTokRelease(`http://127.0.0.1:${device.wdaLocalPort ?? 8100}`, releaseSignal,directImports,sibling);
+                }
                 if(item.results?.preparedNative?.kind==='instagram') return new PreparedInstagramRelease(`http://127.0.0.1:${device.wdaLocalPort ?? 8100}`,releaseSignal,item);
                 return new InstagramRelease(`http://127.0.0.1:${device.wdaLocalPort ?? 8100}`, releaseSignal,directImports);
             };

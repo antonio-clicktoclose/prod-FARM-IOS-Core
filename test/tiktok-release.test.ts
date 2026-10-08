@@ -27,11 +27,22 @@ test('TikTok publication checks open the profile once while waiting for a receip
  let profileVisits=0,reads=0;
  driver.input={targets:[{platform:'tiktok',account:'antoniorevenue'}]};
  driver.profile=async()=>{profileVisits++;};
- driver.matchingPost=async()=>++reads===3?'published-video':null;
+ driver.matchingPosts=async()=>++reads===3?['published-video']:[];
  driver.sleep=async()=>{};
  const receipt=await driver.verify();
  assert.equal(profileVisits,1);assert.equal(reads,3);
  assert.equal(receipt.tiktok.verified,true);
+});
+
+test('TikTok hook variant with a shared caption needs a new matching post, not the sibling',async()=>{
+ const {TikTokRelease}=await import('../src/publishing/tiktok-release.js');
+ const driver=new TikTokRelease('http://unused',new AbortController().signal,undefined,true) as any;
+ let reads=0;
+ driver.input={targets:[{platform:'tiktok',account:'antoniorevenue'}]};
+ driver.baselineMatches=1;driver.profile=async()=>{};driver.sleep=async()=>{};
+ driver.matchingPosts=async()=>++reads<3?['sibling']:['new','sibling'];
+ const receipt=await driver.verify();
+ assert.equal(reads,3);assert.equal(receipt.tiktok.verified,true);
 });
 
 test('TikTok account transition waits without repeating profile taps',async()=>{

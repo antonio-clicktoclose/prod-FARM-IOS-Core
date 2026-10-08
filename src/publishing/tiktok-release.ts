@@ -18,7 +18,10 @@ export function matchesTikTokPost(label: string, caption: string): boolean {
 
 /** Native TikTok release. Each item owns one atomic Post claim. */
 export class TikTokRelease extends WdaApp implements ReleaseDriver {
-    constructor(base:string,signal:AbortSignal,private imports?:DirectMediaStore){super(base,signal);}
+    /** allowSiblingCaption: a hook variant (different video) we already posted uses this exact caption.
+     * Then the caption alone cannot tell the posts apart, so verification counts matching posts instead. */
+    constructor(base:string,signal:AbortSignal,private imports?:DirectMediaStore,private allowSiblingCaption=false){super(base,signal);}
+    private baselineMatches=0;
     /** Close TikTok account prompts (e.g. "Add email", seen Oct 7) that cover the profile. Never fills them in. */
     protected async dismissPrompts() {
         for (let n = 0; n < 3; n++) {
@@ -62,23 +65,28 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         if(account.replace(/^@/,'')!==expected) throw new Error('TikTok account does not match the calendar item');
         await this.tapElement('accessibility id','profile_tab_public_post','Published videos');
     }
-    private async matchingPost(): Promise<string|null> {
+    private async matchingPost(): Promise<string|null> { return (await this.matchingPosts())[0] ?? null; }
+    /** Visible grid tiles with this exact caption, newest first (top row, then left to right). */
+    private async matchingPosts(): Promise<string[]> {
         for(let attempt=0;attempt<4;attempt++) {
             try {
                 const rows=(await this.request(this.session+'/elements',{using:'class name',value:'XCUIElementTypeButton'})).value ?? [];
+                const found:{id:string;x:number;y:number}[]=[];
                 for(const row of rows){
                     const id=this.id(row);
                     if(!(await this.request(`${this.session}/element/${id}/displayed`)).value)continue;
                     const label=String((await this.request(`${this.session}/element/${id}/attribute/label`)).value);
-                    if(matchesTikTokPost(label,this.input!.caption))return id;
+                    if(!matchesTikTokPost(label,this.input!.caption))continue;
+                    const r=(await this.request(`${this.session}/element/${id}/rect`)).value;
+                    found.push({id,x:r.x,y:r.y});
                 }
-                return null;
+                return found.sort((a,b)=>a.y-b.y||a.x-b.x).map(f=>f.id);
             } catch(error) {
                 if(!(error instanceof Error)||!error.message.includes('stale element')||attempt===3)throw error;
                 await this.sleep(500);
             }
         }
-        return null;
+        return [];
     }
     protected async screen() {
         const image=Buffer.from((await this.request('/screenshot')).value,'base64');
@@ -118,7 +126,8 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         if(createHash('sha256').update(bytes).digest('hex')!==media.sha256)throw new Error('Video changed since preparation');
         await this.start('com.zhiliaoapp.musically');
         await this.profile();
-        if(await this.matchingPost())throw new Error('A TikTok post with this caption already exists; do not repost');
+        this.baselineMatches=(await this.matchingPosts()).length;
+        if(this.baselineMatches&&!this.allowSiblingCaption)throw new Error('A TikTok post with this caption already exists; do not repost');
         let albumName='PF-'+media.sha256.slice(0,8)+'-'+Date.now().toString(36);
         const imported=this.imports ? {value:await this.imports.ensure(input.deviceUdid,media,this.base,this.signal)} : await this.request('/wda/import-media',{name:media.name,mimeType:media.mimeType,data:bytes.toString('base64'),albumName},180_000);
         if(this.imports)albumName=imported.value.albumName;
@@ -245,7 +254,8 @@ export class TikTokRelease extends WdaApp implements ReleaseDriver {
         const deadline=Date.now()+60_000;
         while(Date.now()<deadline){
             try {
-                if(await this.matchingPost())return {tiktok:{verified:true,source:'tiktok_app',evidence:'Full caption matched in the published video grid on @'+this.input!.targets[0].account.replace(/^@/,''),checkedAt:new Date().toISOString()}};
+                // With a sibling caption, only a new matching tile proves this upload (Oct 8: hook variants share captions).
+                if((await this.matchingPosts()).length>(this.allowSiblingCaption?this.baselineMatches:0))return {tiktok:{verified:true,source:'tiktok_app',evidence:'Full caption matched in the published video grid on @'+this.input!.targets[0].account.replace(/^@/,'')+(this.allowSiblingCaption?` (matching posts rose above ${this.baselineMatches} before Post)`:''),checkedAt:new Date().toISOString()}};
             }catch(error){this.signal.throwIfAborted();}
             await this.sleep(10_000);
         }

@@ -18,7 +18,9 @@ try{
  locked=(await c.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) l',[phone])).rows[0].l;if(!locked)throw Error('Phone busy');
  const imports=new DirectMediaStore(db.pool);await imports.initialize();
  const platforms=item.input.targets.map((t:any)=>t.platform);
- driver=platforms.includes('youtube')?new YouTubeRelease(base,signal,item,imports):platforms.includes('tiktok')?new TikTokRelease(base,signal,imports):new InstagramRelease(base,signal,imports);
+ const sibling=(await c.query(`SELECT 1 FROM scheduler.publishing_items s WHERE s.id<>$1 AND s.media->>'sha256'<>$2 AND s.input->>'caption'=$3
+   AND s.input->'targets'->0->>'platform'='tiktok' AND s.status='published' LIMIT 1`,[item.id,item.media.sha256,item.input.caption])).rowCount===1;
+ driver=platforms.includes('youtube')?new YouTubeRelease(base,signal,item,imports):platforms.includes('tiktok')?new TikTokRelease(base,signal,imports,sibling):new InstagramRelease(base,signal,imports);
  if(!platforms.includes('youtube'))await new NativeMuteGuard(base,signal).prepare();
  const started=Date.now();
  const evidence=await driver.preflight(item.input,item.media);
