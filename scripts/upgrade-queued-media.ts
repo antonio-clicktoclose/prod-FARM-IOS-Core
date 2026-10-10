@@ -14,7 +14,7 @@ import {dirname,basename} from 'node:path';
 import {createDatabaseConnection} from '../src/database/client.js';
 import {validatePostingInput,requestHash} from '../src/publishing/model.js';
 
-const apply=process.argv.includes('--apply'),soonMs=45*60_000,only=process.argv.find(v=>v.startsWith('--only='))?.slice(7);
+const apply=process.argv.includes('--apply'),soonMs=Number(process.argv.find(v=>v.startsWith('--soon-minutes='))?.slice(15)??45)*60_000,only=process.argv.find(v=>v.startsWith('--only='))?.slice(7);
 const probe=(p:string)=>JSON.parse(execFileSync('ffprobe',['-v','error','-count_packets','-show_entries',
  'stream=codec_type,width,height,pix_fmt,color_range,nb_read_packets:format=duration,bit_rate','-of','json',p],{encoding:'utf8'}));
 const video=(j:any)=>j.streams.find((s:any)=>s.codec_type==='video');
