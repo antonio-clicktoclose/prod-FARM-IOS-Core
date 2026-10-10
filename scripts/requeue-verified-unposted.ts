@@ -1,6 +1,6 @@
 /** Re-queue Instagram/Facebook items whose Share was claimed but never posted (Antonio, Oct 8: "Never stop before posting everything").
  * Usage: requeue-verified-unposted.ts            dry run: Graph check of every claimed needs_review Instagram item
- *        requeue-verified-unposted.ts --apply    record the proof, cancel the old item, create a fresh held item
+ *        requeue-verified-unposted.ts --apply [--only=NAME] [--min-claim-hours=N]    record the proof, cancel the old item, create a fresh held item
  * Acts only when the Share claim is over 24 hours old and neither the latest 300 Instagram posts nor the latest
  * 100 Facebook Reels carry the caption (exact or first 60 characters). The backlog arms the fresh item.
  * Database and read-only Graph calls; no phone input. */
@@ -10,7 +10,9 @@ import {PublishingStore} from '../src/publishing/store.js';
 import {validatePostingInput,requestHash} from '../src/publishing/model.js';
 import {normalizeText} from '../src/publishing/meta-receipts.js';
 
-const apply=process.argv.includes('--apply');
+const apply=process.argv.includes('--apply'),only=process.argv.find(v=>v.startsWith('--only='))?.slice(7);
+// Default 24h. Lower only when Instagram itself showed "Not posted ... saved in your drafts" (it stopped retrying).
+const minHours=Number(process.argv.find(v=>v.startsWith('--min-claim-hours='))?.slice(18)??24);
 const secrets=JSON.parse(execFileSync('/usr/bin/python3',['-c',`
 import importlib.util,os,json
 s=importlib.util.spec_from_file_location("s",os.path.expanduser("~/.local/share/c2c-secrets/c2c_secrets.py"));m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
@@ -31,8 +33,8 @@ if(media.length<100||reels.length<50)throw Error(`Graph scan too small (${media.
 const db=createDatabaseConnection();
 try{
  const rows=(await db.pool.query(`SELECT i.*,r.share_claimed_at FROM scheduler.publishing_items i JOIN scheduler.publishing_releases r ON r.item_id=i.id
-   WHERE r.state='needs_review' AND r.share_claimed_at IS NOT NULL AND r.share_claimed_at<now()-interval '24 hours'
-   AND i.input->'targets' @> '[{"platform":"instagram"}]'`)).rows;
+   WHERE r.state='needs_review' AND r.share_claimed_at IS NOT NULL AND r.share_claimed_at<now()-make_interval(secs=>$1::float8*3600)
+   AND i.input->'targets' @> '[{"platform":"instagram"}]'`,[minHours])).rows.filter((i:any)=>!only||i.media.name.includes(only));
  const store=new PublishingStore(db.pool);
  for(const i of rows){
   const want=normalizeText(i.input.caption),head=want.slice(0,60);
