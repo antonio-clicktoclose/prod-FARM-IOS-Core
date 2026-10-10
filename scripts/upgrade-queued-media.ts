@@ -36,7 +36,10 @@ function psnrOf(a:string,b:string){
 }
 
 const db=createDatabaseConnection();
+// One run at a time: the hourly backlog job starts this, and a long run may overlap the next hour.
+const lock=await db.pool.connect();
 try{
+ if(!(await lock.query("SELECT pg_try_advisory_lock(hashtextextended('phone-farm:media-upgrade',0)) ok")).rows[0].ok){console.log('Another upgrade run is active');process.exitCode=0;throw Object.assign(Error('busy'),{busy:true});}
  const rows=(await db.pool.query(`SELECT i.*,r.state rstate,r.run_at,r.share_claimed_at FROM scheduler.publishing_items i
    LEFT JOIN scheduler.publishing_releases r ON r.item_id=i.id WHERE i.status<>'cancelled'`)).rows;
  const groups=new Map<string,any[]>();for(const i of rows)groups.set(i.media.sha256,[...(groups.get(i.media.sha256)??[]),i]);
@@ -101,4 +104,5 @@ try{
   }catch(e){await c.query('ROLLBACK');throw e;}finally{c.release();}
  }
  if(!plan.length)console.log('Nothing to upgrade');
-}finally{await db.close();}
+}catch(e:any){if(!e.busy)throw e;}
+finally{lock.release();await db.close();}

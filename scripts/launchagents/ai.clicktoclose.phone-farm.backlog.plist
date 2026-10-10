@@ -7,7 +7,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string><string>-c</string>
-    <string>date; for lane in social youtube; do /Users/antoniomonteiro/.local/bin/node --env-file-if-exists=.env --import tsx scripts/autopilot-backlog.ts --lane=$lane --apply | tail -1; done</string>
+    <string>date; for lane in social youtube; do /Users/antoniomonteiro/.local/bin/node --env-file-if-exists=.env --import tsx scripts/autopilot-backlog.ts --lane=$lane --apply | tail -1; done; nice -n 15 /Users/antoniomonteiro/.local/bin/node --env-file-if-exists=.env --import tsx scripts/upgrade-queued-media.ts --apply | grep -E 'upgraded|NOT upgraded|Another'</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>/Users/antoniomonteiro/.local/bin:/opt/homebrew/bin:/usr/bin:/bin</string></dict>
