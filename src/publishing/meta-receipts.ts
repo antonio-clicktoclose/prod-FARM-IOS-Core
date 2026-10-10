@@ -16,6 +16,17 @@ print(json.dumps({"meta":f.get("token") or f.get("credential"),"page":str(f.get(
 }
 export const normalizeText = (v: string) => v.replace(/\s+/g, ' ').trim();
 
+/** Facebook shows @handles as Page names (Oct 8: "@antoniorevenue" became "Antonio | More Leads & Sales..."), so
+ * match the caption text around each mention, in order. Both values are compared after whitespace normalization. */
+export function sameCaptionAroundMentions(want: string, got: string) {
+    want = normalizeText(want); got = normalizeText(got);
+    if (got === want) return true;
+    const parts = want.split(/@[A-Za-z0-9._]+/).map(t => t.trim()).filter(Boolean);
+    if (parts.length < 2) return false; let at = 0;
+    for (const part of parts) { const i = got.indexOf(part, at); if (i < 0) return false; at = i + part.length; }
+    return got.startsWith(parts[0]!);
+}
+
 /** Look up the post once. Instagram must match exactly; Facebook returns `missingCaption` when its newest Reel has none. */
 export async function metaReceipts(caption: string) {
     const s = loadSecrets();
@@ -31,9 +42,7 @@ export async function metaReceipts(caption: string) {
         .sort((a: any, b: any) => Date.parse(b.created_time ?? 0) - Date.parse(a.created_time ?? 0));
     // Facebook turns @handles into Page names (Oct 8: "@antoniorevenue" became "Antonio | More Leads & Sales..."),
     // so match the caption text around each mention, in order, on the newest Reel that has it.
-    const parts = want.split(/@[A-Za-z0-9._]+/).map(t => t.trim()).filter(Boolean);
-    const sameText = (d: string) => { if (d === want) return true; if (parts.length < 2) return false; let at = 0;
-        for (const part of parts) { const i = d.indexOf(part, at); if (i < 0) return false; at = i + part.length; } return d.startsWith(parts[0]!); };
+    const sameText = (d: string) => sameCaptionAroundMentions(want, d);
     for (const r of reels) if (sameText(normalizeText(r.description ?? ''))) { out.facebook = { verified: true, source: 'facebook_graph', url: 'https://www.facebook.com' + r.permalink_url, evidence: 'Exact full caption on Antonio Revenue Reels via the Facebook Graph API' }; break; }
     if (!out.facebook && reels[0] && !normalizeText(reels[0].description ?? '')) out.facebookMissingCaption = true;
     return out;

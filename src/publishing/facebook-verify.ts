@@ -2,6 +2,7 @@ import {visibleNativeNodes} from './native-xml.js';
 import type { PostingInput } from './model.js';
 import {WdaApp} from './wda-app.js';
 import {frameZero,matchTile} from './facebook-match.js';
+import { sameCaptionAroundMentions } from './meta-receipts.js';
 
 export const normalizeCaption = (value: string) => value.replace(/\s+/g, ' ').trim();
 /** Verification on the configured Facebook Page. Read-only, except adding a missing caption to our own cover-matched Reel. */
@@ -104,7 +105,7 @@ export class FacebookVerifier extends WdaApp {
                     if(!await this.visible('accessibility id','fbreels-description-expand')&&!await this.visible('accessibility id','fbreels-description-collapse')){await this.addMissingCaption(input);added=true;}
                     if (!await this.visible('accessibility id','fbreels-description-expand')) await this.tapElement('accessibility id','fbreels-description-collapse','Expand Reel caption',10_000);
                     const caption=await this.read('accessibility id','fbreels-description-expand','label','Facebook caption');
-                    if(normalizeCaption(caption)!==normalizeCaption(input.caption))throw new Error('Facebook Reel matched by cover, but its caption differs; not edited');
+                    if(!sameCaptionAroundMentions(input.caption,caption))throw new Error('Facebook Reel matched by cover, but its caption differs; not edited');
                     if (!keepOpen) await this.tapElement('accessibility id','back-button','Leave Facebook Reel');
                     return {verified:true,source:'facebook_app',evidence:`Cover matched frame zero (difference ${best.score.toFixed(3)}) and exact full caption matched on Antonio Revenue > Reels${added?'; the missing caption was added':''}`,checkedAt:new Date().toISOString()};
                 }
@@ -116,7 +117,7 @@ export class FacebookVerifier extends WdaApp {
                 if(!await this.visible('accessibility id','fbreels-description-expand')&&!await this.visible('accessibility id','fbreels-description-collapse')){await this.tapElement('accessibility id','back-button','Back to Facebook Page');continue;}
                 if (!await this.visible('accessibility id','fbreels-description-expand')) await this.tapElement('accessibility id','fbreels-description-collapse','Expand Reel caption',10_000);
                 const caption=await this.read('accessibility id','fbreels-description-expand','label','Facebook caption');
-                if(normalizeCaption(caption)===normalizeCaption(input.caption)) {
+                if(sameCaptionAroundMentions(input.caption,caption)) {
                     const receipt={verified:true,source:'facebook_app',evidence:'Exact full caption matched in the Facebook app on Antonio Revenue > Reels',checkedAt:new Date().toISOString()};
                     if (!keepOpen) await this.tapElement('accessibility id','back-button','Leave Facebook Reel');
                     return receipt;
