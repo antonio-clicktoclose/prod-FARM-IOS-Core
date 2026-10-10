@@ -127,7 +127,11 @@ export class PreparedYouTubeRelease extends WdaApp implements ReleaseDriver {
         await this.tapElement('accessibility id','eml.shorts-video-title-new','Published description');
         const description=visibleNativeNodes(String((await this.request(this.session+'/source')).value));
         if(!description.some(n=>n.label===input.caption))throw Error('Published YouTube description differs');
-        await this.tapElement('accessibility id','id.ui.browse.close.button','Close description');
+        // iOS 27 (Oct 10 12:26): the close button became id.elements.button "Close". Closing is cleanup after the
+        // receipt matched, so try both and never fail a verified upload over it.
+        const close=await this.visible('accessibility id','id.ui.browse.close.button')
+            ??await this.visible('predicate string','name == "id.elements.button" AND label == "Close" AND visible == 1');
+        if(close){await this.assertInputApp();await this.request(this.session+'/element/'+close+'/click',{}).catch(()=>undefined);}
         return {youtube:{verified:true,source:'youtube_app',evidence:'Exact native title, account and full description matched. Viewer-facing link matched the reviewed owned long-form video '+reviewedLongForm.id}};
     }
     async reconcile(input:PostingInput){this.input=input;const fromFeed=await this.publicFeedReceipt(input,30_000);if(fromFeed)return {youtube:fromFeed};await this.start('com.google.ios.youtube');return this.verify();}
