@@ -26,7 +26,8 @@ try{
  if(!(await c.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) locked',[phone])).rows[0].locked)throw Error('Phone busy; try again after the current job');
  const items=(await c.query('SELECT * FROM scheduler.publishing_items ORDER BY created_at FOR UPDATE')).rows;
  const releases=new Map((await c.query('SELECT * FROM scheduler.publishing_releases FOR UPDATE')).rows.map(r=>[r.item_id,r]));
- const claimed=(i:any)=>{const r=releases.get(i.id);return !!r?.share_claimed_at||['published','running'].includes(r?.state)||i.status==='published';};
+ // requeue-verified-unposted.ts records Graph proof that a claimed Share never reached Instagram or Facebook.
+ const claimed=(i:any)=>{const r=releases.get(i.id);if(i.results?.verifiedNotPosted?.verified===true)return false;return !!r?.share_claimed_at||['published','running'].includes(r?.state)||i.status==='published';};
  // Antonio's rule: every Instagram post links another Reel. Default to the reviewed Reel when a post has none.
  const relatedRef=(await c.query(`SELECT input->'instagramRelatedReel' r FROM scheduler.publishing_items WHERE input->'instagramRelatedReel'->>'url'=$1 LIMIT 1`,[reviewedRelatedReel])).rows[0]?.r;
  const eligible:any[]=[];
