@@ -64,6 +64,9 @@ export class WdaApp {
         // Keep the app and any unsent composer intact. Home stops foreground
         // playback without terminating an app or changing its account session.
         await post('/wda/homescreen',{});
+        // Oct 10 16:23: a Short left by Home kept playing in picture-in-picture over Instagram's caption OK button.
+        // Close YouTube itself (the comment driver already relaunches it fresh); its sign-in is kept.
+        if(bundleId==='com.google.ios.youtube'&&this.session)await post(this.session+'/wda/apps/terminate',{bundleId}).catch(()=>undefined);
     }
     /** Read-only failure evidence: screenshot and screen tree, saved locally. Never sends input; works after a time-out. */
     async captureFailure(label: string): Promise<string> {
