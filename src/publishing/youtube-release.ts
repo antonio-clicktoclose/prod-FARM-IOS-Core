@@ -53,22 +53,29 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
    await this.assertInputApp();await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:750,toX:215,toY:300,duration:.4});await this.sleep(500);
   }
  }
+ /** iOS 27 (Oct 10 12:12): full-screen OCR no longer reads the small "AI use / No" row. Crop the row from its
+  * element rect, enlarge it, and read it alone. No answer other than "No" counts as saved. */
+ private async aiUseIsNo(){
+  const row=(await this.nodes()).find(n=>n.name==='id.elements.components.metadata_editor.altered_content_picker'&&n.label==='AI use');
+  if(!row)return false;
+  const shot=Buffer.from((await this.request('/screenshot')).value,'base64'),width=(await sharp(shot).metadata()).width!,scale=width/430;
+  const crop=await sharp(shot).extract({left:0,top:Math.round(row.y*scale),width,height:Math.round(row.height*scale)}).resize({width:width*2}).png().toBuffer();
+  const words=(await recognizeWords(crop)).map(w=>w.text);
+  return words.includes('No')&&!words.includes('Yes');
+ }
  private async attributes(input:PostingInput){
   // The small grey Attributes heading is not reliably recognized. Its unique
   // Tags subtitle is visible on the same reviewed row.
   if(!await this.visible('accessibility id','Attributes'))await this.metadataRow('Tags');await this.waitFor('accessibility id','Attributes','Native Attributes');
-  let words=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
-  if(words.filter(w=>w.text==='No'&&w.y>300&&w.y<500).length!==1){
+  let words:Awaited<ReturnType<typeof recognizeWords>>;
+  if(!await this.aiUseIsNo()){
    await this.tapElement('predicate string','name == "id.elements.components.metadata_editor.altered_content_picker" AND label == "AI use" AND visible == 1','AI use');
    await this.tapElement('accessibility id','No','AI use No');
    await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Back to Attributes');
    // Oct 8 11:30: the first frame after Back came before the screen settled; the saved frame reads No. Re-read it.
-   for(let read=0;read<4;read++){
-    if(read)await this.sleep(700);
-    words=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
-    if(words.filter(w=>w.text==='No'&&w.y>300&&w.y<500).length===1)break;
-   }
-   if(words.filter(w=>w.text==='No'&&w.y>300&&w.y<500).length!==1)throw Error('YouTube AI use did not save; no Upload');
+   let saved=false;
+   for(let read=0;read<4&&!saved;read++){if(read)await this.sleep(700);saved=await this.aiUseIsNo();}
+   if(!saved)throw Error('YouTube AI use did not save; no Upload');
   }
   await this.tapElement('accessibility id','Add tags','Native tags');
   for(const tag of input.youtube!.publishing!.tags){await this.assertInputApp();await this.request(this.session+'/wda/keys',{value:[tag+'\n']});}
