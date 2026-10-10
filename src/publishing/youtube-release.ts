@@ -188,9 +188,17 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
  }
  protected async completeDescription(input:PostingInput):Promise<ReleaseEvidence>{
   this.ready=false;this.input=input;
-  const header=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
-  const heading=header.filter(w=>w.y>120&&w.y<340).sort((a,b)=>a.x-b.x).map(w=>w.text.toLowerCase()).join(' ');
-  if(!heading.includes('add description'))throw Error('Native description editor is not active');
+  // iOS 27 (Oct 10 11:56): the open editor was missed by the OCR band alone. The heading is also an element named
+  // "Add description" with the mentions editor below it; accept either, rechecking for a few seconds while it draws.
+  let active=false;
+  for(let n=0;n<6&&!active;n++){
+   if(n)await this.sleep(800);
+   active=!!await this.visible('predicate string','name == "Add description" AND visible == 1')
+    &&!!await this.visible('accessibility id','id.elements.components.metadata_editor.mentions_description_editor');
+   if(!active){const header=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
+    active=header.filter(w=>w.y>120&&w.y<340).sort((a,b)=>a.x-b.x).map(w=>w.text.toLowerCase()).join(' ').includes('add description');}
+  }
+  if(!active)throw Error('Native description editor is not active');
   const fields=(await this.request(this.session+'/elements',{using:'class name',value:'XCUIElementTypeTextView'})).value,candidates=[];
   // YouTube keeps an offscreen title field in the hierarchy. The actual
   // description field can itself report visible=false while the keyboard is open.
