@@ -93,7 +93,7 @@ export function assertReceipts(input: PostingInput, receipts: Awaited<ReturnType
             // Independent proof: the platform's own app, or its official public data (Graph API, channel feed).
             if (target.platform === 'facebook' && !['facebook_app','facebook_graph'].includes(String(receipt.source))) throw new Error('Independent Facebook app verification is required');
             if (target.platform === 'tiktok' && receipt.source !== 'tiktok_app') throw new Error('Native TikTok post verification is required');
-            if(target.platform==='youtube'&&!['youtube_app','youtube_public_feed'].includes(String(receipt.source)))throw new Error('Native YouTube post verification is required');
+            if(target.platform==='youtube'&&!['youtube_app','youtube_public_feed','youtube_shorts_page'].includes(String(receipt.source)))throw new Error('Native YouTube post verification is required');
             if (receipt.url) {
                 const host = new URL(receipt.url).hostname;
                 const domain = target.platform === 'instagram' ? 'instagram.com' : target.platform === 'tiktok' ? 'tiktok.com' : target.platform==='youtube'?'youtube.com':'facebook.com';
