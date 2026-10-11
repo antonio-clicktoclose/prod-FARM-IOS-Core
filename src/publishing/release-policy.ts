@@ -31,8 +31,7 @@ export function assertRelease(input: PostingInput, evidence: ReleaseEvidence, op
         || evidence.relatedReel.url !== input.instagramRelatedReel.url
         || evidence.relatedReel.label !== input.instagramRelatedReel.label))
         throw new Error('The exact related Reel and link label must pass native preflight');
-    // Create trial reel (Antonio, Oct 10) offers no Trial or automatic-promotion setting; its entry point is the evidence.
-    if (input.instagramTrial && evidence.trialEntry !== 'create_trial_reel' && (!input.automaticPromotion || !evidence.automaticPromotion))
+    if (input.instagramTrial && (!input.automaticPromotion || !evidence.automaticPromotion))
         throw new Error('Automatic promotion must be verified before publishing');
     if (input.targets.some(t => t.platform === 'facebook') && (input.facebookMode !== 'linked_from_instagram' || !evidence.linkedFacebook))
         throw new Error('Linked Facebook sharing must be verified before publishing');

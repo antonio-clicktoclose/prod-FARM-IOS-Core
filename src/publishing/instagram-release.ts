@@ -153,8 +153,9 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         let automaticPromotion = false, trialEntry: 'share_switch' | 'create_trial_reel' | undefined;
         // Oct 10: Reels started from "Create trial reel" show no Trial switch and no automatic-promotion setting;
         // the entry point makes them Trial Reels. Use the old switch only when Instagram still shows it.
-        if (input.instagramTrial && this.fromCreateTrialReel && !await this.visible('accessibility id', 'trial-switch')) trialEntry = 'create_trial_reel';
-        else {
+        // Oct 10 21:55: a Reel started from Create trial reel went out as a regular Reel (top of the main Reels grid,
+        // is_shared_to_feed true). Never treat the entry point as Trial evidence; require the visible Trial switch.
+        {
             await this.ensureSwitch('Trial', input.instagramTrial, () => this.tapElement('accessibility id', 'trial-switch', 'Trial switch'));
             if (input.instagramTrial) { automaticPromotion = await this.ensureAutomaticPromotion(); trialEntry = 'share_switch'; }
         }
