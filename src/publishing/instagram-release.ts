@@ -151,11 +151,11 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
             await this.tapPoint(382, row.y + 29);   // the toggle sits at the row's right edge; the row itself ignores taps
         });
         let automaticPromotion = false, trialEntry: 'share_switch' | 'create_trial_reel' | undefined;
-        // Oct 10: Reels started from "Create trial reel" show no Trial switch and no automatic-promotion setting;
-        // the entry point makes them Trial Reels. Use the old switch only when Instagram still shows it.
         // Oct 10 21:55: a Reel started from Create trial reel went out as a regular Reel (top of the main Reels grid,
-        // is_shared_to_feed true). Never treat the entry point as Trial evidence; require the visible Trial switch.
-        {
+        // is_shared_to_feed true). Never treat the entry point as Trial evidence; Trial needs the visible switch.
+        // Oct 11 (Antonio): Trial is unavailable, post regular Reels. With Trial off, a missing switch already means regular.
+        if (!input.instagramTrial && !await this.visible('accessibility id', 'trial-switch')) { /* regular Reel */ }
+        else {
             await this.ensureSwitch('Trial', input.instagramTrial, () => this.tapElement('accessibility id', 'trial-switch', 'Trial switch'));
             if (input.instagramTrial) { automaticPromotion = await this.ensureAutomaticPromotion(); trialEntry = 'share_switch'; }
         }
@@ -180,7 +180,19 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         if(rows.length!==1)throw Error('Exact Instagram album is missing or ambiguous; no fallback to Recents');
         const id=this.id(rows[0]);
         if(!(await this.request(this.session+'/element/'+id+'/displayed')).value)await this.request(this.session+'/wda/element/'+id+'/scrollTo',{},30000);
-        const r=(await this.request(this.session+'/element/'+id+'/rect')).value;
+        let r=(await this.request(this.session+'/element/'+id+'/rect')).value;
+        // Oct 11 (iOS 27): scrollTo left the album below the fold once each queued video got its own album. Swipe toward it.
+        // Instagram's iOS 27 picker shows Albums as a sideways row: swipe that row (on the tile above the label) as well.
+        for(let n=0;n<30&&(r.y<100||r.y+r.height>880||r.x<0||r.x+r.width>430);n++){
+            if(r.y<100||r.y+r.height>880){
+                const down=r.y+r.height>880;
+                await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:down?760:300,toX:215,toY:down?360:700,duration:0.3});
+            }else{
+                const left=r.x+r.width>430,rowY=Math.max(120,r.y-60);
+                await this.request(this.session+'/wda/dragfromtoforduration',{fromX:left?380:60,fromY:rowY,toX:left?160:280,toY:rowY,duration:0.3});
+            }
+            await this.sleep(600);r=(await this.request(this.session+'/element/'+id+'/rect')).value;
+        }
         if(r.y<100||r.y+r.height>880||r.x<0||r.x+r.width>430)throw Error('Instagram source album is outside the visible list');
         await this.tapPoint(r.x+r.width/2,r.y+r.height/2);
         await this.waitFor('predicate string','type == "XCUIElementTypeCell" AND name == "Gallery Selection, '+albumName+' selected" AND visible == 1','Selected source album');
