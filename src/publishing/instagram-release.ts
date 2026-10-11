@@ -24,6 +24,7 @@ export interface ReleaseMedia { path: string; name: string; mimeType: string; sh
  * it is preflight evidence and everything after it is read-only verification plus the first comment and pin.
  */
 export class InstagramRelease extends WdaApp implements ReleaseDriver {
+    private fromCreateTrialReel = false;
     constructor(base:string,signal:AbortSignal,private imports?:DirectMediaStore){super(base,signal);}
     protected override async tapElement(using:string,value:string,what:string,ms=20_000) {
         if(using!=='accessibility id'||!['profile-tab','back-button','BackButton','more-options-button','Edit cover'].includes(value))
@@ -54,6 +55,7 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         const media = mediaValue as ReleaseMedia;
         this.input = input;
         this.mediaPath = media.path;
+        this.fromCreateTrialReel = false;
         const ig = input.targets.find(t => t.platform === 'instagram');
         if (!ig) throw new Error('This release needs an Instagram target');
         const facebook = input.targets.some(t => t.platform === 'facebook');
@@ -74,8 +76,16 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         const imported={value:await this.imports.ensure(input.deviceUdid,media,this.base,this.signal)};
         if (!imported.value?.localIdentifier) throw new Error('The phone did not return a media import ID');
 
-        await this.tapElement('accessibility id', 'profile-add-button', 'Create button');
-        await this.tapElement('accessibility id', 'creation-reel', 'Create Reel');
+        if (input.instagramTrial) {
+            // Oct 10 (Antonio): the share screen no longer offers the Trial switch. Trial Reels start from
+            // Profile > Reels > Trial reels > "Create trial reel", which opens the same New reel gallery.
+            await this.openTrialReelsGrid();
+            await this.tapElement('predicate string', 'type == "XCUIElementTypeButton" AND label == "Create trial reel" AND visible == 1', 'Create trial reel');
+            this.fromCreateTrialReel = true;
+        } else {
+            await this.tapElement('accessibility id', 'profile-add-button', 'Create button');
+            await this.tapElement('accessibility id', 'creation-reel', 'Create Reel');
+        }
         // Never overwrite a draft that is not bound to this source.
         await this.requireNoDraftPrompt();
         return this.completeGallery(input,media,imported.value,seconds,account);
@@ -140,9 +150,14 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
             const row = await this.rect('predicate string', 'type == "XCUIElementTypeSwitch" AND name CONTAINS ", Add AI Label," AND visible == 1', 'AI label row');
             await this.tapPoint(382, row.y + 29);   // the toggle sits at the row's right edge; the row itself ignores taps
         });
-        await this.ensureSwitch('Trial', input.instagramTrial, () => this.tapElement('accessibility id', 'trial-switch', 'Trial switch'));
-        let automaticPromotion = false;
-        if (input.instagramTrial) automaticPromotion = await this.ensureAutomaticPromotion();
+        let automaticPromotion = false, trialEntry: 'share_switch' | 'create_trial_reel' | undefined;
+        // Oct 10: Reels started from "Create trial reel" show no Trial switch and no automatic-promotion setting;
+        // the entry point makes them Trial Reels. Use the old switch only when Instagram still shows it.
+        if (input.instagramTrial && this.fromCreateTrialReel && !await this.visible('accessibility id', 'trial-switch')) trialEntry = 'create_trial_reel';
+        else {
+            await this.ensureSwitch('Trial', input.instagramTrial, () => this.tapElement('accessibility id', 'trial-switch', 'Trial switch'));
+            if (input.instagramTrial) { automaticPromotion = await this.ensureAutomaticPromotion(); trialEntry = 'share_switch'; }
+        }
 
         await this.tapElement('predicate string', 'type == "XCUIElementTypeCell" AND name BEGINSWITH "Also share on…," AND visible == 1', 'Also share on');
         const facebookOn = !!(await this.visible('predicate string', `label == "${FACEBOOK_ON}" AND visible == 1`));
@@ -152,7 +167,7 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         const shareLabel = await this.read('accessibility id', 'share-sheet-share-button', 'label', 'Share button');
         if (shareLabel !== 'Share') throw new Error(`Unexpected final button: ${shareLabel}`);
         this.evidence = { account, importedMediaId: imported.localIdentifier, galleryCell: cellLabel, seconds, cover, aiLabel: false, facebookOn, checkedAt: new Date().toISOString() };
-        return { exactMedia: true, videoFrameCover: true, caption: true, account: true, automaticPromotion, linkedFacebook: facebookOn, ...(relatedReel?{relatedReel}:{}) };
+        return { exactMedia: true, videoFrameCover: true, caption: true, account: true, automaticPromotion, linkedFacebook: facebookOn, ...(trialEntry?{trialEntry}:{}), ...(relatedReel?{relatedReel}:{}) };
     }
 
     /** Select the source-specific album; never infer the source from newest media. */
@@ -485,6 +500,12 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
             if(!entry||entry.y<100||entry.y+entry.height>850)throw new Error('The Drafts and trials entry is not safely visible');
             await this.tapPoint(entry.x+entry.width/2,entry.y+entry.height/2);
             await this.sleep(800);rows=await cells();trial=rows.find(n=>n.label==='Trial reels');
+            // Oct 10 21:35: the Drafts tile now opens the Trial reels page directly (title "Trial reels", Create trial reel button).
+            const title=visibleNativeNodes((await this.request(this.session+'/source')).value)
+                .find(n=>n.type==='XCUIElementTypeStaticText'&&n.label==='Trial reels'&&n.y<120);
+            if(!trial&&title&&await this.visible('accessibility id','BackButton')){
+                await this.waitFor('accessibility id','reels-video-thumbnail','trial reels grid',15_000);return;
+            }
         }
         if(!trial||trial.y<100||trial.y+trial.height>910)throw new Error('The Trial reels menu is not safely visible');
         await this.tapPoint(trial.x+trial.width/2,trial.y+trial.height/2);
