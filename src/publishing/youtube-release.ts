@@ -79,8 +79,16 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
   }
   await this.tapElement('accessibility id','Add tags','Native tags');
   for(const tag of input.youtube!.publishing!.tags){await this.assertInputApp();await this.request(this.session+'/wda/keys',{value:[tag+'\n']});}
-  words=await recognizeWords(Buffer.from((await this.request('/screenshot')).value,'base64'));
-  if(!input.youtube!.publishing!.tags.every(tag=>words.some(w=>w.text.toLowerCase()===tag.toLowerCase()&&w.y<1700)))throw Error('Native YouTube tags did not match');
+  // Oct 11 12:56 (iOS 27): full-screen OCR missed two of five visible tag chips. Also read the chip area enlarged.
+  const shot=Buffer.from((await this.request('/screenshot')).value,'base64');
+  words=await recognizeWords(shot);
+  const {width=1290}=await sharp(shot).metadata(),scale=width/430;
+  // Each read misses different chips (verified on the 12:56 frame); a tag counts when any read finds it.
+  const area=()=>sharp(shot).extract({left:0,top:Math.round(130*scale),width,height:Math.round(420*scale)});
+  const reads=await Promise.all([area().resize({width:width*2}),area().negate({alpha:false}).grayscale().resize({width:width*2}),area().negate({alpha:false}).grayscale()]
+   .map(async img=>recognizeWords(await img.png().toBuffer())));
+  const seen=new Set([...words.filter(w=>w.y<1700),...reads.flat()].map(w=>w.text.toLowerCase()));
+  if(!input.youtube!.publishing!.tags.every(tag=>seen.has(tag.toLowerCase())))throw Error('Native YouTube tags did not match');
   await this.tapElement('accessibility id','id.elements.components.metadata_editor.app_bar.back_button','Back to details');
   await this.metadataRow('Community');await this.waitFor('accessibility id','Community','Native Community');
   if(!(await this.nodes()).some(n=>n.name==='id.elements.components.metadata_editor.comment_picker'&&n.label==='Comments. On'))throw Error('YouTube comments are not On');
