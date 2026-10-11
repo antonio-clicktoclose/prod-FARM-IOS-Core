@@ -103,6 +103,9 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
   if(!review?.coverReviewed||review.sourceSha256!==media.sha256||review.relatedVideoId!==reviewedLongForm.id||input.youtube?.publishing?.relatedVideoId!==reviewedLongForm.id||input.youtube.visibility!=='public'||input.youtube.madeForKids||input.youtube.publishing.aiUse!=='no')throw Error('This YouTube source needs its own reviewed cover and long-form link');
   if(createHash('sha256').update(await readFile(media.path)).digest('hex')!==media.sha256)throw Error('Reviewed YouTube file changed');
   const probe=await inspectShortsVideo(media.path);await new NativeMuteGuard(this.base,this.signal).prepare();await this.start('com.google.ios.youtube');
+  // Oct 11 02:52: YouTube now closes after each job (no picture-in-picture), so a cold launch can stay black past 20 s.
+  // Wait for its tab bar or an open composer, read-only, before any tap.
+  for(const end=Date.now()+45_000;Date.now()<end&&!await this.visible('accessibility id','id.ui.pivotbar.FElibrary.button')&&!await this.visible('accessibility id','id.metadata_editor.upload_button')&&!await this.visible('accessibility id','id.creation.editor.button.next');)await this.sleep(1500);
   if(await this.visible('accessibility id','id.metadata_editor.upload_button')||await this.visible('accessibility id','id.creation.editor.button.next')||await this.visible('accessibility id','id.creation.photolibrary.picker.button.show_album_list')||(await this.nodes()).some(n=>n.name==='id.creation.photolibrary.album.cell'))throw Error('An existing YouTube composer needs review; it was not overwritten');
   await this.tapElement('accessibility id','id.ui.pivotbar.FElibrary.button','You');
   if(await this.visible('accessibility id','View channel'))await this.tapElement('accessibility id','View channel','Owned channel');
