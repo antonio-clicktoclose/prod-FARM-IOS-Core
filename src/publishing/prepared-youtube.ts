@@ -66,6 +66,18 @@ export class PreparedYouTubeRelease extends WdaApp implements ReleaseDriver {
                     if(clean(t!)===title)return{verified:true,source:'youtube_public_feed',url:'https://youtube.com/shorts/'+id,
                         evidence:`Exact title on channel ${input.youtube!.channelId} public feed; related long-form video verified before Upload`};
             }catch{}
+            // Oct 10 19:17: every YouTube RSS feed returned 404. The channel's public Shorts page still lists each Short's
+            // ID and exact title in one lockup block; use it the same way, exact title only.
+            try{
+                const page=await (await fetch('https://www.youtube.com/channel/'+input.youtube!.channelId+'/shorts',{headers:{'accept-language':'en-US'},signal:AbortSignal.timeout(20_000)})).text();
+                for(const block of page.split('"shortsLockupViewModel"').slice(1)){
+                    const id=/"videoId":"([A-Za-z0-9_-]{11})"/.exec(block)?.[1],raw=/"primaryText":\{"content":"((?:[^"\\]|\\.)*)"/.exec(block)?.[1];
+                    if(!id||raw===undefined)continue;
+                    let t:string;try{t=JSON.parse('"'+raw+'"');}catch{continue;}
+                    if(t.trim()===title)return{verified:true,source:'youtube_shorts_page',url:'https://youtube.com/shorts/'+id,
+                        evidence:`Exact title on channel ${input.youtube!.channelId} public Shorts page; related long-form video verified before Upload`};
+                }
+            }catch{}
             if(Date.now()>=deadline)return undefined;
             await this.sleep(15_000);
         }
