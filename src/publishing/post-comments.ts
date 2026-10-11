@@ -12,7 +12,7 @@ export const commentKey = (platform: CommentPlatform, id: string) => platform===
 
 /** Comments have their own claims. A failed comment never changes the video release or retries its Share. */
 export async function runPostComment(pool: Pool, id: string, platform: CommentPlatform, driver: CommentDriver) {
-    const c=await pool.connect();let phone='';let locked=false;let claimed=false;let ownsAttempt=false;
+    const c=await pool.connect();let phone='';let locked=false;let claimed=false;let ownsAttempt=false;let prior:string|undefined;
     const key=commentKey(platform,id);
     try {
         await c.query(ENGAGEMENT_SCHEMA);
@@ -25,7 +25,7 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         phone=item.input.deviceUdid;
         locked=(await c.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) locked',[phone])).rows[0].locked;
         if(!locked){console.log(new Date().toISOString(),'comment job waits: phone busy',key);return;}
-        const prior=(await c.query('SELECT status FROM scheduler.engagement_actions WHERE claim_key=$1',[key])).rows[0]?.status;
+        prior=(await c.query('SELECT status FROM scheduler.engagement_actions WHERE claim_key=$1',[key])).rows[0]?.status;
         // Reserve the attempt before opening an app. Interrupted attempts stay visible for review.
         const reserved=await c.query(`INSERT INTO scheduler.engagement_actions(claim_key,action,post_url,status)
           VALUES($1,'comment_pin',$2,'preparing')
@@ -49,7 +49,9 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         if(ownsAttempt)await (driver as {captureFailure?:(l:string)=>Promise<string>}).captureFailure?.(`comment-${platform}-${id.slice(0,8)}`).catch(()=>undefined);
         // Errors before the job is reserved used to vanish; log them so a skipped comment shows why.
         if(!ownsAttempt)console.error(new Date().toISOString(),'comment job skipped',key,error instanceof Error?error.message:String(error));
-        if(ownsAttempt)await c.query(`UPDATE scheduler.engagement_actions SET status=$2,result=COALESCE(result,'{}'::jsonb)||$3::jsonb,updated_at=now() WHERE claim_key=$1`,[key,claimed?'uncertain_review':'failed_before_action',JSON.stringify({error:error instanceof Error?error.message:String(error)})]);
+        // Oct 11 14:28: a pin-only retry failed before its claim and overwrote uncertain_review with failed_before_action;
+        // the next retry then posted the Facebook comment a second time. A comment that may be up stays uncertain.
+        if(ownsAttempt)await c.query(`UPDATE scheduler.engagement_actions SET status=$2,result=COALESCE(result,'{}'::jsonb)||$3::jsonb,updated_at=now() WHERE claim_key=$1`,[key,claimed||prior==='uncertain_review'?'uncertain_review':'failed_before_action',JSON.stringify({error:error instanceof Error?error.message:String(error)})]);
     } finally {
         if(ownsAttempt)await driver.leaveVideo().catch(()=>undefined);
         if(locked)await c.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[phone]);
