@@ -16,6 +16,27 @@
 - Nightly backup: launchd `phone-farm.backup` at 03:17 runs `scripts/backup-db.sh` (farm schemas only, 14 local copies; set `BACKUP_REMOTE` in `.env` to also copy to R2).
 - Latency: about 150 ms per query from the Mac (local was under 1 ms). The release loop polls every 20 s, so this is fine. If the internet drops, posting pauses; claims are written before Share, so nothing double-posts.
 
+### Cloud status page (read-only), 2026-10-12
+
+https://phone-farm-status.antoniompaulo25.workers.dev shows the farm even when the Mac is off. It cannot arm, disarm, post or touch the phone. Controls stay on the Mac page, https://phonefarm.clicktoclose.ai/publishing, which the cloud page links to.
+
+What it shows (refreshes every 60 s, times in Pacific): the Mac heartbeat from `scheduler.publishing_worker_health` (stopped after 90 s without a tick, the same rule as the Mac), counts, needs-review rows with their recorded reasons (releases, items and `engagement_actions`), the armed queue grouped by day, and the latest 60 published posts with per-platform receipt links. `/api/status` returns the same data as JSON.
+
+| Piece | Detail |
+|---|---|
+| Code | `cloud/status-page/` (own `package.json`, not part of the root build). `npm run typecheck`, `npm test`, `npm run deploy` |
+| Host | Cloudflare Worker `phone-farm-status` on the free `workers.dev` subdomain. Version preview URLs are off. No new DNS record, no paid resource |
+| Login | Cloudflare Access app "Phone Farm Status (cloud, read-only)", Antonio only, 12 h session, same rule as phonefarm.clicktoclose.ai. The Worker also verifies the Access JWT (signature, audience, issuer, expiry) and returns 403 without it, so it stays closed if the Access app is ever removed. Secret: `ACCESS_AUD` |
+| Database role | `phone_farm_status_ro`: SELECT only on `scheduler.publishing_items`, `publishing_releases`, `engagement_actions` and `publishing_worker_health` (the heartbeat). `default_transaction_read_only=on`, `statement_timeout=15s`, connection limit 5. Writes and other tables were tested and refused. Password generated locally, sent to Supabase only as a SCRAM hash |
+| Credential | 1Password Business, vault `c2c-monorepo`, item "Phone Farm — Supabase Postgres read-only (role phone_farm_status_ro)" |
+| DB link | Cloudflare Hyperdrive config `phone-farm-status-ro` (`ed3b3fc2866e45c5be2b29a4411850c5`) to the session pooler, `sslmode=verify-full` against the uploaded Supabase Root 2021 CA (Cloudflare CA cert `485f1e8d-6447-4e19-8818-b17a1e4bc854`). Query caching is off. A direct Worker socket cannot be used: the runtime does not trust Supabase's private CA, and the driver retried until it hit the subrequest limit |
+
+Verified 2026-10-12 12:55 PT: anonymous requests to `/` and `/api/status` redirect to Access sign-in; signed in, the page rendered and its counts matched a direct database query (42 armed, 0 running, 17 published in 24 h, 98 published total, 4 needs review, same next slot and last post).
+
+Rotate the DB password: generate a new one, `ALTER ROLE phone_farm_status_ro PASSWORD '<scram hash>'`, update the 1Password item, then `wrangler hyperdrive update ed3b3fc2866e45c5be2b29a4411850c5 --origin-password=...`. To remove the page: `wrangler delete`, delete the Access app and Hyperdrive config, `DROP ROLE phone_farm_status_ro`.
+
+A friendlier name such as `status.phonefarm.clicktoclose.ai` would need a new DNS name; not created without Antonio's approval.
+
 ---
 
 Original plan follows (Neon was the first recommendation; Antonio chose the existing Supabase instead).
