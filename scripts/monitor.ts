@@ -1,11 +1,12 @@
 /** Phone Farm autopilot monitor. Deterministic: no AI calls, no phone input, no posting.
  * `check` (every 15 minutes) sends a Slack DM only for new problems; silent when healthy.
  * `summary` (daily) sends the day's posts, comments and open items.
- * Env: SLACK_BOT_TOKEN (injected by scripts/run-monitor.sh from 1Password), SLACK_ALERT_USER (Slack user id). */
+ * Slack delivery lives in scripts/lib/ops-notify.ts: it reads the bot token from the 1Password SDK reader with retries and falls back to a macOS notification. */
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { Message, Blocks, Md } from 'slack-block-builder';
 import { createDatabaseConnection } from '../src/database/client.js';
+import { sendAlert } from './lib/ops-notify.js';
 
 const mode = process.argv[2] === 'summary' ? 'summary' : 'check';
 const dashboard = 'https://phonefarm.clicktoclose.ai/publishing';
@@ -14,22 +15,6 @@ const REALERT_MS = 3 * 60 * 60_000;
 const pt = (d: string | Date) => new Date(d).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', hour: 'numeric', minute: '2-digit' });
 
 type Issue = { key: string; text: string };
-
-async function slack(blocks: unknown[], text: string) {
-    const token = process.env.SLACK_BOT_TOKEN, user = process.env.SLACK_ALERT_USER;
-    if (!token || !user) throw Error('SLACK_BOT_TOKEN and SLACK_ALERT_USER are required');
-    const call = async (method: string, body: unknown) => {
-        const r = await fetch('https://slack.com/api/' + method, { method: 'POST', headers: { 'content-type': 'application/json; charset=utf-8', authorization: 'Bearer ' + token }, body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) });
-        const j = await r.json() as any; if (!j.ok) throw Error(`Slack ${method}: ${j.error}`); return j;
-    };
-    const channel = (await call('conversations.open', { users: user })).channel.id;
-    await call('chat.postMessage', { channel, text, blocks, unfurl_links: false });
-}
-
-async function wda(route: string) {
-    const r = await fetch('http://127.0.0.1:8100' + route, { signal: AbortSignal.timeout(15_000) });
-    return (await r.json() as any);
-}
 
 const db = createDatabaseConnection();
 try {
@@ -43,22 +28,7 @@ try {
             if (!row) issues.push({ key: 'service:' + label, text: `Service *${label}* is not loaded.` });
             else if (label !== 'backlog' && row.split('\t')[0] === '-') issues.push({ key: 'service:' + label, text: `Service *${label}* is loaded but not running.` });
         }
-        // Phone connection
-        try {
-            const status = await wda('/status');
-            if (!status.value?.ready) issues.push({ key: 'wda:notready', text: 'The phone connection (WebDriverAgent) is not ready.' });
-            else if ((await wda('/wda/locked')).value !== false) issues.push({ key: 'phone:locked', text: 'The iPhone is *locked*. Posts wait until it is unlocked.' });
-        } catch {
-            // The WDA service explains why the runner is down, e.g. the iPhone waiting for its XCTest passcode.
-            let why = '';
-            try { why = JSON.parse(execFileSync('curl', ['-s', '-m', '5', '--unix-socket', '.wda/wda-service.sock', 'http://localhost/devices'], { encoding: 'utf8' })).devices?.[0]?.message ?? ''; } catch {}
-            const passcode = /automation approval prompt|enabling automation/i.test(why);
-            // Retry the runner each check, so posting resumes on its own once the passcode has been entered.
-            if (/retries stopped|error/i.test(why)) try { execFileSync('curl', ['-s', '-m', '20', '-X', 'POST', '--unix-socket', '.wda/wda-service.sock', 'http://localhost/devices/00008130-000229EE1AA0001C/reconnect']); } catch {}
-            issues.push({ key: 'wda:down:' + (passcode ? 'passcode' : 'other'), text: passcode
-                ? '*The iPhone needs its passcode for XCTest.* Unlock the phone and enter the passcode on the "Enter iPhone Passcode for XCTest" prompt. Posting is paused until then; the worker resumes on its own after a reconnect.'
-                : `The phone connection (WebDriverAgent) is not answering.${why ? `\n> ${why}` : ''}` });
-        }
+        // Phone connection, lock state and battery are owned by scripts/device-alert.ts (every 5 minutes).
         // Posts that stopped in the last 20 minutes
         for (const r of await q(`SELECT i.id,i.media->>'name' n,i.input->'targets'->0->>'platform' pl,r.share_claimed_at IS NOT NULL c,r.result->>'error' e,r.result->>'failureEvidence' ev
             FROM scheduler.publishing_releases r JOIN scheduler.publishing_items i ON i.id=r.item_id
@@ -88,8 +58,8 @@ try {
                 ...fresh.map(i => Blocks.Section({ text: i.text })),
                 Blocks.Context().elements(`${pt(new Date())} PT · ${Md.link(dashboard, 'Open the calendar')}`),
             ).buildToObject() as any;
-            await slack(message.blocks, message.text);
-            for (const i of fresh) state[i.key] = now;
+            // Only remember an alert once Slack accepted it; a failed send raised a Mac notification and retries next check.
+            if ((await sendAlert(message.blocks, message.text, { title: 'Phone Farm needs attention' })).ok) for (const i of fresh) state[i.key] = now;
         }
         await mkdir('.scheduler-data', { recursive: true });
         await writeFile(statePath, JSON.stringify(state, null, 2));
@@ -109,7 +79,7 @@ try {
             Blocks.Section({ text: `*Needs review:* ${review}\n*Queue:* ${queue.n} armed posts${queue.t ? ', through ' + pt(queue.t) : ''}` }),
             Blocks.Context().elements(Md.link(dashboard, 'Open the calendar')),
         ).buildToObject() as any;
-        await slack(message.blocks, message.text);
-        console.log(`${new Date().toISOString()} summary sent`);
+        const sent = await sendAlert(message.blocks, message.text, { title: 'Phone Farm daily summary' });
+        console.log(`${new Date().toISOString()} summary ${sent.ok ? 'sent' : 'not sent: ' + sent.reason}`);
     }
 } finally { await db.close(); }
