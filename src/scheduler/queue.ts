@@ -15,6 +15,7 @@ export function queueNameForDevice(udid: string): string {
 export function createQueue({ migrate = false }: { migrate?: boolean } = {}): PgBoss {
     const boss = new PgBoss({
         connectionString: databaseUrl(),
+        max: Number(process.env.DATABASE_POOL_SIZE ?? 10),
         schema: 'pgboss',
         schedule: false,
         useListenNotify: true,

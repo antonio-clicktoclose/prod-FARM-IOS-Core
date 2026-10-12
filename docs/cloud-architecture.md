@@ -1,6 +1,24 @@
-# Phone Farm: what moves to the cloud (plan, 2026-10-12)
+# Phone Farm: what moves to the cloud (2026-10-12)
 
-Status: plan only. Nothing here is provisioned and the live database has not been migrated. Each paid step needs Antonio's approval.
+## Status
+
+- **Done 2026-10-12 08:05 PT (Antonio's go-ahead):** the scheduler database runs on the existing Supabase project **c2c-analytics** (`eukbltrghvgapbmtabqm`, us-east-1). No new vendor, no added cost.
+- Still plan only: R2 off-site backups and the Healthchecks.io dead-man's switch.
+
+### How the cloud database is set up
+
+- Dedicated role `phone_farm`, which owns only the schemas `scheduler`, `pgboss` and `drizzle`. It cannot read the content tables in `public` (checked: `has_table_privilege('public.social_posts','select')` is false). Connection limit 40, statement timeout 120 s.
+- Connection: Supavisor **session** pooler `aws-1-us-east-1.pooler.supabase.com:5432` (pg-boss uses LISTEN/NOTIFY, which the 6543 transaction pooler breaks). TLS `verify-full` against the pinned Supabase Root 2021 CA in `config/supabase-prod-ca-2021.crt` (sha256 `80:70:25:AD:...:CA:FA`, the same as Supabase's published `prod-ca-2021.crt`).
+- Credentials: 1Password Business, vault `c2c-monorepo`, item "Phone Farm — Supabase Postgres (c2c-analytics, role phone_farm)". The password was generated locally and sent to Supabase only as a SCRAM hash. The URL is written only to the git-ignored, mode-600 `.env`.
+- `DATABASE_POOL_SIZE=4` caps both the app pool and pg-boss.
+- Cutover: `scripts/cutover-to-cloud-db.sh`. It stops the DB jobs only while the phone is idle (phone advisory lock), copies the three schemas, checks every table's row count, switches `.env` and restarts the jobs. All 35 tables matched. `--rollback` points back to the local database.
+- The old local database `phone_farm` is kept and set read-only (`default_transaction_read_only = on`) so no stray script can split the data. Dump taken at cutover: `.scheduler-data/backups/cutover-20261012-080453.sql`.
+- Nightly backup: launchd `phone-farm.backup` at 03:17 runs `scripts/backup-db.sh` (farm schemas only, 14 local copies; set `BACKUP_REMOTE` in `.env` to also copy to R2).
+- Latency: about 150 ms per query from the Mac (local was under 1 ms). The release loop polls every 20 s, so this is fine. If the internet drops, posting pauses; claims are written before Share, so nothing double-posts.
+
+---
+
+Original plan follows (Neon was the first recommendation; Antonio chose the existing Supabase instead).
 
 ## Constraint
 

@@ -6,7 +6,7 @@
 # Paths in the plists are rewritten from the original Mac to this repo and this home folder. Secrets are never printed.
 # Full runbook: docs/new-mac-setup.md
 set -u
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && pwd)"; cd "$REPO"  # sslrootcert in DATABASE_URL is relative to the repo
 SRC_REPO="/Users/antoniomonteiro/Developer/phone-farm"; SRC_HOME="/Users/antoniomonteiro"
 DEST="$HOME/Library/LaunchAgents"; UIDN="$(id -u)"
 UDID="00008130-000229EE1AA0001C"
@@ -78,6 +78,8 @@ for src in "$REPO"/scripts/launchagents/*.plist; do
   label="$(basename "$src" .plist)"; short="${label#ai.clicktoclose.phone-farm.}"
   [ -n "$ONLY" ] && ! echo ",$ONLY," | grep -q ",$short," && continue
   out="$DEST/$label.plist"
+  # A plist whose Label differs from its filename could load a second copy of another job (e.g. a second worker).
+  [ "$(plutil -extract Label raw "$src" 2>/dev/null)" = "$label" ] || { bad "$label: Label inside does not match the filename; skipped"; continue; }
   sed -e "s#$SRC_REPO#$REPO#g" -e "s#$SRC_HOME#$HOME#g" "$src" > "$out.new" && plutil -lint "$out.new" >/dev/null || { bad "$label: bad plist"; rm -f "$out.new"; continue; }
   mv "$out.new" "$out"
   launchctl bootout "gui/$UIDN/$label" >/dev/null 2>&1
