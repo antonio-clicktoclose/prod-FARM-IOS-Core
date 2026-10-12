@@ -9,7 +9,7 @@ import type { PostingInput } from './model.js';
 import {ReceiptVerificationError, type ReleaseDriver, type ReleaseEvidence} from './release-policy.js';
 import { FacebookVerifier } from './facebook-verify.js';
 import { WdaApp, parseGalleryCell } from './wda-app.js';
-import {locateRelatedCover} from './instagram-related.js';
+import {locateRelatedCover,locateRelatedCoverInCells} from './instagram-related.js';
 import {metaReceipts} from './meta-receipts.js';
 
 const run = promisify(execFile);
@@ -39,6 +39,16 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
 
     /** Run after receipt and comment checks, including failures. Does not change the post. */
     async leaveVideo(): Promise<void> {
+        // Oct 11 20:44: a comment job left the comment menu (Unpin / Add to story / Delete) and keyboard open, and the
+        // next Instagram post stopped on that unknown screen. Close the menu by tapping the video above it; never tap Delete.
+        try {
+            for (let n = 0; n < 3; n++) {
+                const menu = this.session && await this.visible('predicate string', 'label == "Delete" AND visible == 1')
+                    && await this.visible('predicate string', 'label == "Add to story" AND visible == 1');
+                if (!menu) break;
+                await this.tapPoint(215, 130); await this.sleep(700);
+            }
+        } catch { /* best effort; Home below still runs */ }
         // Cleanup must still run when the posting signal was cancelled.
         const response = await fetch(this.base + '/wda/homescreen', {
             method: 'POST', headers: {'content-type':'application/json'}, body:'{}',
@@ -211,7 +221,16 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         let found;
         for(let attempt=0;;attempt++){
             try{found=await locateRelatedCover(Buffer.from((await this.request('/screenshot')).value,'base64'),related);break;}
-            catch(e){if(attempt>=10)throw e;await this.sleep(1500);}
+            catch(e){
+                // After the grid has had time to load, look at the real cells and scroll down page by page.
+                if(attempt>=3){
+                    const cells=visibleNativeNodes((await this.request(this.session+'/source')).value).filter(n=>n.type==='XCUIElementTypeCell'&&n.width>=130&&n.width<=150&&n.height>=240);
+                    try{found=await locateRelatedCoverInCells(Buffer.from((await this.request('/screenshot')).value,'base64'),cells,related);break;}catch{}
+                    if(attempt>=12)throw e;
+                    await this.request(this.session+'/wda/dragfromtoforduration',{fromX:215,fromY:760,toX:215,toY:360,duration:0.3});
+                }
+                await this.sleep(1500);
+            }
         }
         await this.tapPoint(found.x,found.y);
         await this.waitFor('accessibility id','Edit linked reel','Link title');

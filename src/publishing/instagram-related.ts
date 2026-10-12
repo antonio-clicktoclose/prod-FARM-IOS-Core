@@ -29,3 +29,23 @@ export async function locateRelatedCover(png:Buffer,related:NonNullable<PostingI
     const index=uniqueCoverMatch(scores),p=positions[index]!;
     return {x:(p.left+210)/3,y:(p.top+290)/3,difference:scores[index]};
 }
+
+/** Oct 11: new Reels pushed the reviewed Reel below the first nine tiles. Match against the picker's actual cells
+ * (rects in points from the screen tree), so the caller can scroll and look again. Same thresholds as above. */
+export async function locateRelatedCoverInCells(png:Buffer,cells:{x:number,y:number,width:number,height:number}[],related:NonNullable<PostingInput['instagramRelatedReel']>) {
+    if(related.url!==reviewedRelatedReel)throw Error('This related Reel needs its own reviewed cover reference');
+    const meta=await sharp(png).metadata();
+    if(meta.width!==1290||meta.height!==2796)throw Error('Related Reel screen size changed');
+    const visible=cells.filter(c=>c.y>=100&&(c.y*3+610)<=2796&&c.y+c.height<=932&&c.x>=0&&c.x*3+420<=1290);
+    if(!visible.length)throw Error('Related Reel cover is missing or ambiguous; no Reel selected');
+    const crop=(bytes:Buffer,left:number,top:number)=>sharp(bytes).extract({left,top,width:420,height:610}).resize(32,48).removeAlpha().raw().toBuffer();
+    const target=await crop(await readFile(reference),0,402);
+    const scores=[];
+    for(const c of visible){
+        const bytes=await crop(png,Math.round(c.x*3),Math.round(c.y*3));let total=0;
+        for(let i=0;i<target.length;i++)total+=Math.abs(target[i]!-bytes[i]!);
+        scores.push(total/(target.length*255));
+    }
+    const index=uniqueCoverMatch(scores),c=visible[index]!;
+    return {x:c.x+70,y:c.y+97,difference:scores[index]};
+}
