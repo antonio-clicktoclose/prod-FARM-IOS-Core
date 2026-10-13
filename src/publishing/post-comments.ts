@@ -5,7 +5,7 @@ import { ENGAGEMENT_SCHEMA } from './engage-task.js';
 export type CommentPlatform = 'instagram' | 'facebook' | 'tiktok' | 'youtube';
 export interface CommentResult { status: string; commentVerified: boolean; pinned: boolean; evidence: string }
 export interface CommentDriver {
-    commentOnPost(input: PostingInput, text: string, claim: () => Promise<void>, existingOnly?: boolean): Promise<CommentResult>;
+    commentOnPost(input: PostingInput, text: string, claim: () => Promise<void>, existingOnly?: boolean, postUrl?: string): Promise<CommentResult>;
     leaveVideo(): Promise<void>;
 }
 export const commentKey = (platform: CommentPlatform, id: string) => platform==='instagram' ? `pin:item:${id}` : `comment:${platform}:item:${id}`;
@@ -41,7 +41,7 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         const result=await driver.commentOnPost(item.input,text,async()=>{
             const r=await c.query(`UPDATE scheduler.engagement_actions SET status='claimed',updated_at=now() WHERE claim_key=$1 AND status='preparing' RETURNING claim_key`,[key]);
             if(!r.rowCount)throw new Error('Comment already claimed');claimed=true;
-        },existingOnly);
+        },existingOnly,item.results.release.receipts[platform].url);
         await c.query(`UPDATE scheduler.engagement_actions SET status='done',result=$2,updated_at=now() WHERE claim_key=$1`,[key,JSON.stringify(result)]);
         await c.query(`UPDATE scheduler.publishing_items SET results=jsonb_set(results,ARRAY[$2],$3::jsonb),updated_at=now() WHERE id=$1`,[id,platform+'Comment',JSON.stringify(result)]);
     } catch(error) {

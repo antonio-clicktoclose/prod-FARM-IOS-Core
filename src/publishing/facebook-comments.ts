@@ -29,8 +29,8 @@ export class FacebookComments extends FacebookVerifier {
         for(const row of authors){const r=(await this.request(`${this.session}/element/${this.id(row)}/rect`)).value;if(r.y<body.y&&body.y-r.y<45)return body;}
         throw new Error('Matching comment does not have the expected author');
     }
-    async commentOnPost(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly=false):Promise<CommentResult>{
-        await this.verifyPost(input,true);
+    async commentOnPost(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly=false,postUrl?:string):Promise<CommentResult>{
+        await this.verifyPost(input,true,false,postUrl);
         await this.tapElement('accessibility id','shorts-comment-top-button','Facebook comments');
         const box='type == "XCUIElementTypeTextView" AND name == "comment-composer-text-area" AND label == "Comment as Antonio Revenue"';
         await this.waitFor('predicate string',box,'Comment as Antonio Revenue');

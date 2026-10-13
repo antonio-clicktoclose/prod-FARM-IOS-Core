@@ -32,3 +32,18 @@ test('Facebook cover match picks one clear tile or none',async()=>{
  assert.equal(uniqueTile([{name:'a',score:.3}]),null);
  assert.equal(uniqueTile([]),null);
 });
+
+test('Facebook opens the receipt link first and never touches the Page grid when the caption matches',async()=>{
+ const d=new FacebookVerifier('http://unused',new AbortController().signal) as any;
+ const urls:string[]=[];const taps:string[]=[];d.session='/session/test';d.start=async()=>{};d.sleep=async()=>{};d.waitFor=async()=> 'ok';
+ d.visible=async(_u:string,v:string)=>v==='fbreels-description-expand'?'expanded':null;d.tapElement=async(_u:string,v:string)=>{taps.push(v);};
+ d.read=async()=> 'Exact full caption';
+ d.request=async(route:string,body:any)=>{if(route==='/session/test/url')urls.push(body.url);return {value:route.endsWith('/source')?'':null};};
+ const input={caption:'Exact full caption',targets:[{platform:'facebook',account:'https://www.facebook.com/profile.php?id=61584693917444'}]};
+ const receipt=await d.verifyPost(input,true,false,'https://www.facebook.com/reel/1085849050989750/');
+ assert.equal(receipt.verified,true);assert.deepEqual(urls,['https://www.facebook.com/reel/1085849050989750/']);assert.deepEqual(taps,[]);
+ d.read=async()=> 'Another caption';urls.length=0;
+ await assert.rejects(d.verifyPost(input,true,false,'https://www.facebook.com/reel/1085849050989750/'),/link: Facebook Reel opened by link has a different caption/);
+ assert.equal(urls[1],'https://www.facebook.com/profile.php?id=61584693917444');
+ await assert.rejects(d.verifyPost(input,true,false,'https://evil.example/reel/1/'),/link: Facebook receipt link is not a Reel link/);
+});
