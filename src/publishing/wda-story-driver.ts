@@ -100,7 +100,19 @@ export class WdaStoryDriver extends InstagramRelease {
     }
 
     /** Builds one frame and stops on the share options sheet. Never taps Share. Returns the native editor preview. */
-    async prepareFrame(frame: NativeStoryFrame, label: string): Promise<{ previewPath: string; previewSha256: string }> {
+    async prepareFrame(frame: NativeStoryFrame, label: string, reimported = false): Promise<{ previewPath: string; previewSha256: string }> {
+        try { return await this.buildFrame(frame, label); }
+        catch (error) {
+            // Oct 13: a Story photo's PF- album vanished from the phone after its import was recorded. Only after the
+            // whole album row was swiped: forget that one import, close Instagram, import a fresh copy and rebuild once.
+            if (reimported || !String(error instanceof Error ? error.message : error).includes('missing after swiping the whole album row')) throw error;
+            await this.resetAfterFailure().catch(() => undefined);
+            if (!await this.storyImports.forgetMissingAlbum(this.deviceUdid, frame.media.sha256)) throw error;
+            return this.prepareFrame(frame, label, true);
+        }
+    }
+
+    private async buildFrame(frame: NativeStoryFrame, label: string): Promise<{ previewPath: string; previewSha256: string }> {
         this.sheetReady = false;
         const media = frame.media;
         if (media.mimeType !== 'image/png') throw new Error('Story frames must be reviewed PNG photos');
@@ -133,35 +145,40 @@ export class WdaStoryDriver extends InstagramRelease {
         return { previewPath: preview.file, previewSha256: createHash('sha256').update(preview.png).digest('hex') };
     }
 
-    /** Oct 13 (iOS 27): All albums is a lazy grid that only holds the first rows in the tree. A Story album imported
-     * earlier sits below newer video albums, so scroll the grid until the exact album exists, then let the shared
-     * picker bring it into view and select it. Never falls back to Recents. */
+    /** Oct 13 (iOS 27): "Select album" shows our PF- albums in one sideways row that loads lazily. A Story album
+     * imported earlier sits right of newer video albums, outside the tree. Swipe that row left until the exact album
+     * exists, bring it fully on screen, then tap it. Stops when the row no longer changes. Never falls back to Recents. */
     protected override async selectUploadAlbum(albumName: string) {
         if (!/^PF-[a-f0-9]{12}$/.test(albumName)) throw Error('Exact Instagram upload album is missing');
-        const find = async () => (await this.request(this.session + '/elements', { using: 'accessibility id', value: albumName })).value as unknown[];
+        const tiles = async () => [...String((await this.request(this.session + '/source')).value)
+            .matchAll(/<XCUIElementTypeButton\b[^>]*label="(PF-[^"]+), [\d,]+ items?"[^>]*\bx="(-?\d+)"[^>]*\by="(-?\d+)"[^>]*\bheight="(\d+)"/g)]
+            .map(m => ({ name: m[1]!, x: Number(m[2]), y: Number(m[3]), h: Number(m[4]) }));
         if (!await this.visible('accessibility id', 'menu-item-All albums'))
             await this.tapElement('predicate string', 'type == "XCUIElementTypeCell" AND name BEGINSWITH "Gallery Selection," AND visible == 1', 'Upload album menu');
         await this.tapElement('accessibility id', 'menu-item-All albums', 'All source albums');
         await this.sleep(1000);
+        const find = async () => (await this.request(this.session + '/elements', { using: 'accessibility id', value: albumName })).value as unknown[];
         let previous: string | undefined;
-        for (let n = 0; n < 40 && (await find()).length === 0; n++) {
-            const source = String((await this.request(this.session + '/source')).value);
-            const labels = [...source.matchAll(/label="(PF-[a-f0-9]{12}), \d+ items?"/g)].map(m => m[1]).join(',');
-            if (labels === previous) throw Error('Exact Instagram album is missing after scrolling all albums; no fallback to Recents');
-            previous = labels;
-            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 215, fromY: 780, toX: 215, toY: 400, duration: 0.3 });
+        for (let n = 0; n < 90 && (await find()).length === 0; n++) {
+            const row = await tiles();
+            const names = row.map(t => `${t.name}@${t.x}`).join(',');
+            if (!row.length || names === previous) throw Error('Exact Instagram album is missing after swiping the whole album row; no fallback to Recents');
+            previous = names;
+            const y = Math.round(row[0]!.y + row[0]!.h / 2);
+            if (y < 110 || y > 880) throw Error('The album row is off screen');
+            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 390, fromY: y, toX: 60, toY: y, duration: 0.3 });
             await this.sleep(700);
         }
         const rows = await find();
         if (rows.length !== 1) throw Error('Exact Instagram album is missing or ambiguous; no fallback to Recents');
         const id = this.id(rows[0] as any);
         let r = (await this.request(this.session + '/element/' + id + '/rect')).value;
-        for (let n = 0; n < 20 && (r.y < 290 || r.y + r.height > 880); n++) {
-            const down = r.y + r.height > 880;
-            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 215, fromY: down ? 760 : 400, toX: 215, toY: down ? 460 : 700, duration: 0.3 });
+        for (let n = 0; n < 12 && (r.x < 0 || r.x + r.width > 430); n++) {
+            const left = r.x + r.width > 430, y = Math.max(120, r.y - 60);
+            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: left ? 330 : 100, fromY: y, toX: left ? 180 : 250, toY: y, duration: 0.3 });
             await this.sleep(600); r = (await this.request(this.session + '/element/' + id + '/rect')).value;
         }
-        if (r.y < 290 || r.y + r.height > 880 || r.x < 0 || r.x + r.width > 430) throw Error('Instagram source album is outside the visible list');
+        if (r.y < 100 || r.y + r.height > 880 || r.x < 0 || r.x + r.width > 430) throw Error('Instagram source album is outside the visible list');
         await this.tapPoint(r.x + r.width / 2, r.y + r.height / 2);
         await this.waitFor('predicate string', 'type == "XCUIElementTypeCell" AND name == "Gallery Selection, ' + albumName + ' selected" AND visible == 1', 'Selected source album');
     }

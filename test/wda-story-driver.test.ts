@@ -83,3 +83,8 @@ test('the Story gallery opens from the badge inside the own tray cell only',()=>
  assert.throws(()=>storyAddBadgePoint(cell+badge(168,174)),/missing or outside/);
  assert.throws(()=>storyAddBadgePoint(badge(68,174)),/tray cell/);
 });
+
+test('a Story revision survives a jsonb key reorder', async () => {
+    const { canonicalJson } = await import('../src/publishing/mirroring-stories.js');
+    assert.equal(canonicalJson({ b: 1, a: [{ y: 2, x: null }] }), canonicalJson({ a: [{ x: null, y: 2 }], b: 1 }));
+});

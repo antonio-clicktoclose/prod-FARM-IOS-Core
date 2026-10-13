@@ -49,7 +49,14 @@ export async function nativeStoryRevision(draft:any,frames:NativeStoryFrame[]) {
         else{if(!f.sourcePath)throw new Error('The original Story source file is required');await checkedLocal(f.sourcePath,f.sourceSha256);}
         await checkedLocal(f.media.path,f.media.sha256);await checkedLocal(f.previewPath,f.previewSha256);
     }
-    return createHash('sha256').update(JSON.stringify({draft,frames})).digest('hex');
+    return createHash('sha256').update(canonicalJson({draft,frames})).digest('hex');
+}
+/** Postgres jsonb reorders object keys, so a revision must not depend on key order (Oct 13: the first WDA capture
+ * failed its own check after a jsonb round trip). */
+export function canonicalJson(value:unknown):string{
+    if(Array.isArray(value))return '['+value.map(canonicalJson).join(',')+']';
+    if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonicalJson((value as any)[k])).join(',')+'}';
+    return JSON.stringify(value)??'null';
 }
 export class NativeStoryStore {
     constructor(private pool:Pool){}

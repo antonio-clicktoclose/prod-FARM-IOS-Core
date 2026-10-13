@@ -8,6 +8,11 @@ export class DirectMediaStore {
  async initialize(){await this.pool.query(`CREATE TABLE IF NOT EXISTS scheduler.direct_media_imports (
   device_udid text NOT NULL, sha256 text NOT NULL, album_name text NOT NULL, state text NOT NULL,
   receipt jsonb, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(device_udid,sha256))`);}
+ /** Only after the caller proved the album is gone from the phone (Story driver swiped the whole album row).
+  * Forgets a finished import so the next ensure imports a fresh copy. Uncertain imports are never forgotten. */
+ async forgetMissingAlbum(device:string,sha256:string){
+  return (await this.pool.query("DELETE FROM scheduler.direct_media_imports WHERE device_udid=$1 AND sha256=$2 AND state='imported'",[device,sha256])).rowCount===1;
+ }
  async ensure(device:string,media:ReleaseMedia,base:string,signal:AbortSignal){
   const bytes=await readFile(media.path);
   if(createHash('sha256').update(bytes).digest('hex')!==media.sha256)throw Error('Source video hash changed');
