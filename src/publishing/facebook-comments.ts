@@ -1,9 +1,9 @@
 import sharp from 'sharp';
 import {FacebookVerifier} from './facebook-verify.js';
+import {visibleNativeNodes} from './native-xml.js';
 import {recognizeWords} from '../tiktok/ocr.js';
 import type {PostingInput} from './model.js';
 import type {CommentResult} from './post-comments.js';
-const q=(s:string)=>s.replace(/\\/g,'\\\\').replace(/"/g,'\\"');
 
 /** Comments only. This driver never opens post settings or AI label controls. */
 export class FacebookComments extends FacebookVerifier {
@@ -21,14 +21,17 @@ export class FacebookComments extends FacebookVerifier {
         const w=more[0];await this.tapPoint((w.x+w.width/2)/3,(w.y+w.height/2)/3);await this.sleep(400);
         return this.menuWords();
     }
-    private async ownComment(text:string){
-        const selector=`name == "comment-body-text" AND label == "${q(text)}" AND visible == 1`;
-        if(!await this.visible('predicate string',selector))return null;
-        const body=await this.rect('predicate string',selector,'Exact Facebook comment');
-        const authors=(await this.request(this.session+'/elements',{using:'predicate string',value:'name == "comment-author-name" AND label BEGINSWITH "Antonio Revenue" AND visible == 1'})).value??[];
-        for(const row of authors){const r=(await this.request(`${this.session}/element/${this.id(row)}/rect`)).value;if(r.y<body.y&&body.y-r.y<45)return body;}
-        throw new Error('Matching comment does not have the expected author');
+    /** One screen-tree snapshot. WDA's displayed flag reports on-screen Facebook comments as hidden (Oct 13),
+     * so read visible="true" nodes from the source instead. Two copies of our comment stop everything for review. */
+    private async commentSnapshot(text:string){
+        const nodes=visibleNativeNodes((await this.request(this.session+'/source')).value);
+        const bodies=nodes.filter(n=>n.name==='comment-body-text'&&n.label===text&&n.y>=50&&n.y+n.height<=900);
+        if(bodies.length>1)throw new Error('Two copies of our Facebook comment are visible; review by hand');
+        const body=bodies[0];
+        if(body&&!nodes.some(n=>n.name==='comment-author-name'&&n.label.startsWith('Antonio Revenue')&&n.y<body.y&&body.y-n.y<45))throw new Error('Matching comment does not have the expected author');
+        return {own:body?{x:body.x,y:body.y,width:body.width,height:body.height}:null,empty:!body&&nodes.some(n=>n.name==='no-comment-background')};
     }
+    private async ownComment(text:string){return (await this.commentSnapshot(text)).own;}
     async commentOnPost(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly=false,postUrl?:string):Promise<CommentResult>{
         await this.verifyPost(input,true,false,postUrl);
         const count=await this.read('accessibility id','shorts-comment-top-button','label','Facebook comment count');
@@ -37,8 +40,8 @@ export class FacebookComments extends FacebookVerifier {
         await this.waitFor('predicate string',box,'Comment as Antonio Revenue');
         // Oct 13: the composer appears before the comment list. A single check missed our comment one second
         // before it loaded. Wait for our comment or the empty-list marker before deciding anything.
-        let own=null;let empty=false;let claimed=false;
-        for(let n=0;n<15;n++){own=await this.ownComment(text);empty=!own&&!!await this.visible('accessibility id','no-comment-background');if(own||empty)break;await this.sleep(1000);}
+        let own:Awaited<ReturnType<FacebookComments['ownComment']>>=null;let empty=false;let claimed=false;
+        for(let n=0;n<15;n++){({own,empty}=await this.commentSnapshot(text));if(own||empty)break;await this.sleep(1000);}
         if(!own){
             if(existingOnly)throw new Error('Existing own comment not found; repair cannot create one');
             // Type only on a Reel with no comments at all, shown both on the Reel and in the loaded list.

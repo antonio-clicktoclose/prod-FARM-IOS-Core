@@ -52,11 +52,23 @@ test('Facebook comments wait for the list and never type on a Reel that already 
  const {FacebookComments}=await import('../src/publishing/facebook-comments.js');
  const make=(count:string,ownAfter:number)=>{const d=new FacebookComments('http://unused',new AbortController().signal) as any;const routes:string[]=[];let polls=0;
   d.verifyPost=async()=>({verified:true});d.read=async()=>count;d.tapElement=async()=>{};d.waitFor=async()=> 'box';d.sleep=async()=>{};d.visible=async()=>null;
-  d.ownComment=async()=>++polls>=ownAfter?{x:60,y:400,width:300,height:40}:null;d.request=async(route:string)=>{routes.push(route);return {value:null};};
+  d.commentSnapshot=async()=>({own:++polls>=ownAfter?{x:60,y:400,width:300,height:40}:null,empty:false});d.request=async(route:string)=>{routes.push(route);return {value:null};};
   d.tapPoint=async()=>{throw new Error('stop after finding own comment');};return {d,routes,get polls(){return polls;}};};
  const late=make('Comment, 1 comments',3);
  await assert.rejects(late.d.commentOnPost({},'Hi',async()=>{},true),/stop after finding own comment/);assert.equal(late.polls,3);
  const others=make('Comment, 2 comments',99);
  await assert.rejects(others.d.commentOnPost({},'Hi',async()=>{assert.fail('claimed');}),/not typed/);
  assert.equal(others.routes.some(r=>r.endsWith('/wda/keys')),false);
+});
+
+test('Facebook own comment comes from visible screen-tree nodes, not the displayed flag',async()=>{
+ const {FacebookComments}=await import('../src/publishing/facebook-comments.js');
+ const d=new FacebookComments('http://unused',new AbortController().signal) as any;d.session='/s';
+ const author='<XCUIElementTypeLink type="XCUIElementTypeLink" name="comment-author-name" label="Antonio Revenue · 8m ·  Author" visible="true" x="60" y="392" width="199" height="18"/>';
+ const body=(y:number)=>`<XCUIElementTypeButton type="XCUIElementTypeButton" name="comment-body-text" label="Tell me why." visible="true" x="60" y="${y}" width="343" height="40"/>`;
+ d.request=async()=>({value:author+body(412)});assert.deepEqual((await d.commentSnapshot('Tell me why.')).own,{x:60,y:412,width:343,height:40});
+ d.request=async()=>({value:author+body(412)+body(600)});await assert.rejects(d.commentSnapshot('Tell me why.'),/Two copies/);
+ d.request=async()=>({value:body(412)});await assert.rejects(d.commentSnapshot('Tell me why.'),/expected author/);
+ d.request=async()=>({value:'<XCUIElementTypeImage type="XCUIElementTypeImage" name="no-comment-background" visible="true" x="127" y="424" width="176" height="116"/>'});
+ assert.deepEqual(await d.commentSnapshot('Tell me why.'),{own:null,empty:true});
 });
