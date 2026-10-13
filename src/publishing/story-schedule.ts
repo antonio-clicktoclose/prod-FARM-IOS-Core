@@ -60,7 +60,21 @@ export class StoryScheduleStore {
 }
 export async function startStorySchedule(pool: Pool, mode: 'planning_only' | 'publishing' = 'planning_only') {
     const owner = await pool.connect();
-    const locked = (await owner.query("SELECT pg_try_advisory_lock(hashtextextended('phone-farm:story-scheduler',3)) AS locked")).rows[0].locked;
+    const tryLock = async () => (await owner.query("SELECT pg_try_advisory_lock(hashtextextended('phone-farm:story-scheduler',3)) AS locked")).rows[0].locked;
+    let locked = await tryLock();
+    if (!locked) {
+        // Oct 13 02:00: a DNS blip crashed the worker and its pooled Supabase session kept this lock; every restart then
+        // failed for two hours. A live owner writes story_worker_health every 30 s, so a heartbeat older than 5 minutes
+        // means nobody owns the lock: close only the idle sessions holding it, then try once more.
+        const stale = (await owner.query(`SELECT last_tick < now() - interval '5 minutes' AS stale FROM scheduler.story_worker_health WHERE id=1`)).rows[0]?.stale;
+        if (stale) {
+            const closed = await owner.query(`SELECT pg_terminate_backend(a.pid) FROM pg_locks l JOIN pg_stat_activity a ON a.pid=l.pid
+              WHERE l.locktype='advisory' AND a.pid<>pg_backend_pid() AND a.state='idle' AND a.query LIKE '%phone-farm:story-scheduler%'`);
+            console.error(new Date().toISOString(), 'Story scheduler lock was stale; closed', closed.rowCount, 'idle holder(s)');
+            await new Promise(r => setTimeout(r, 1000));
+            locked = await tryLock();
+        }
+    }
     if (!locked) { owner.release(); throw new Error('A Phone Farm Story scheduler is already running'); }
     const store = new StoryScheduleStore(pool,mode);
     try { await store.initialize(); await store.tick(); }
