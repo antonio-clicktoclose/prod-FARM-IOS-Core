@@ -31,12 +31,18 @@ export class FacebookComments extends FacebookVerifier {
     }
     async commentOnPost(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly=false,postUrl?:string):Promise<CommentResult>{
         await this.verifyPost(input,true,false,postUrl);
+        const count=await this.read('accessibility id','shorts-comment-top-button','label','Facebook comment count');
         await this.tapElement('accessibility id','shorts-comment-top-button','Facebook comments');
         const box='type == "XCUIElementTypeTextView" AND name == "comment-composer-text-area" AND label == "Comment as Antonio Revenue"';
         await this.waitFor('predicate string',box,'Comment as Antonio Revenue');
-        let own=await this.ownComment(text);let claimed=false;
+        // Oct 13: the composer appears before the comment list. A single check missed our comment one second
+        // before it loaded. Wait for our comment or the empty-list marker before deciding anything.
+        let own=null;let empty=false;let claimed=false;
+        for(let n=0;n<15;n++){own=await this.ownComment(text);empty=!own&&!!await this.visible('accessibility id','no-comment-background');if(own||empty)break;await this.sleep(1000);}
         if(!own){
             if(existingOnly)throw new Error('Existing own comment not found; repair cannot create one');
+            // Type only on a Reel with no comments at all, shown both on the Reel and in the loaded list.
+            if(count!=='Comment, 0 comments'||!empty)throw new Error('Facebook Reel has comments but not ours, or the list did not load; not typed');
             await this.tapElement('predicate string',box,'Comment box');
             const existing=await this.read('predicate string',box,'value','Comment draft');
             if(existing.trim())throw new Error('Facebook comment draft is not empty');
