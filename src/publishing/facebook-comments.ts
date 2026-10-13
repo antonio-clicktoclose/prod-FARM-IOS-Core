@@ -45,7 +45,8 @@ export class FacebookComments extends FacebookVerifier {
             const send=await this.waitFor('accessibility id','comment-composer-confirm-button','Post comment');
             await claim();claimed=true;
             await this.request(`${this.session}/element/${send}/click`,{});
-            for(let n=0;n<15;n++){await this.sleep(1000);own=await this.ownComment(text);if(own&&!await this.visible('predicate string','name == "comment-timestamp" AND label == "Posting..."'))break;own=null;}
+            // Oct 13: founderos's comment appeared after more than 15 s (uncertain_review although it was up). Wait 45 s.
+            for(let n=0;n<45;n++){await this.sleep(1000);own=await this.ownComment(text);if(own&&!await this.visible('predicate string','name == "comment-timestamp" AND label == "Posting..."'))break;own=null;}
             if(!own)throw new Error('Facebook comment receipt missing; never post again automatically');
         }
         await this.tapPoint(own.x+Math.min(own.width/2,150),own.y+own.height/2,900);
