@@ -176,10 +176,10 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                         const commentSignal=AbortSignal.any([controller.signal,AbortSignal.timeout(8*60_000)]);
                         const driver=platform==='instagram'?new InstagramRelease(base,commentSignal):platform==='facebook'?new FacebookComments(base,commentSignal):platform==='youtube'?new YouTubeComments(base,commentSignal,undefined):new TikTokRelease(base,commentSignal);
                         const comment=driver.commentOnPost.bind(driver);
-                        driver.commentOnPost=async(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly?:boolean)=>{
+                        driver.commentOnPost=async(input:PostingInput,text:string,claim:()=>Promise<void>,existingOnly?:boolean,postUrl?:string)=>{
                             // runPostComment already owns the phone advisory lock here.
                             await new NativeMuteGuard(base,commentSignal).prepare();
-                            return comment(input,text,claim,existingOnly);
+                            return comment(input,text,claim,existingOnly,postUrl);
                         };
                         try{await runPostComment(pool,item.id,platform,driver);}
                         // Close the app after every comment job: TikTok leaves its comment menu open after the Pin check (Oct 7).

@@ -79,3 +79,9 @@ test('a verified destination can receive its comment while another destination n
  const f=fixture('needs_review');await runPostComment(f.pool,'item','tiktok',f.driver);assert.equal(f.ledger.status,'uncertain_review');
  const g=fixture('needs_review');g.item.results.release.receipts.tiktok.verified=false;await runPostComment(g.pool,'item','tiktok',g.driver);assert.equal(g.ledger,null);
 });
+
+test('comment jobs hand the driver the verified receipt link',async()=>{
+ const f=fixture();(f.item.results.release.receipts.tiktok as any).url='https://example.test/post/1';let seen:string|undefined;
+ (f.driver as any).commentOnPost=async(_i:any,_t:string,claim:()=>Promise<void>,_e?:boolean,url?:string)=>{seen=url;await claim();return {status:'pinned',commentVerified:true,pinned:true,evidence:'ok'};};
+ await runPostComment(f.pool,'item','tiktok',f.driver);assert.equal(seen,'https://example.test/post/1');assert.equal(f.ledger.status,'done');
+});
