@@ -181,9 +181,9 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
                             await new NativeMuteGuard(base,commentSignal).prepare();
                             return comment(input,text,claim,existingOnly,postUrl);
                         };
-                        try{await runPostComment(pool,item.id,platform,driver);}
-                        // Close the app after every comment job: TikTok leaves its comment menu open after the Pin check (Oct 7).
-                        finally{await (driver as {resetAfterFailure?:()=>Promise<void>}).resetAfterFailure?.().catch(()=>undefined);}
+                        // runPostComment closes the app under the phone lock. Oct 13: this reset ran here after "phone busy"
+                        // too, pressing Home in the middle of whichever job held the phone.
+                        await runPostComment(pool,item.id,platform,driver);
                         ran=true;break;
                     }
                     if(ran)break;

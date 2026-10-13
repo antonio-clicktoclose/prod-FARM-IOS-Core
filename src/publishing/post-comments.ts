@@ -53,7 +53,8 @@ export async function runPostComment(pool: Pool, id: string, platform: CommentPl
         // the next retry then posted the Facebook comment a second time. A comment that may be up stays uncertain.
         if(ownsAttempt)await c.query(`UPDATE scheduler.engagement_actions SET status=$2,result=COALESCE(result,'{}'::jsonb)||$3::jsonb,updated_at=now() WHERE claim_key=$1`,[key,claimed||prior==='uncertain_review'?'uncertain_review':'failed_before_action',JSON.stringify({error:error instanceof Error?error.message:String(error)})]);
     } finally {
-        if(ownsAttempt)await driver.leaveVideo().catch(()=>undefined);
+        // Close the app only while this job holds the phone lock: TikTok leaves its comment menu open after the Pin check (Oct 7).
+        if(ownsAttempt){await driver.leaveVideo().catch(()=>undefined);await (driver as {resetAfterFailure?:()=>Promise<void>}).resetAfterFailure?.().catch(()=>undefined);}
         if(locked)await c.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[phone]);
         c.release();
     }

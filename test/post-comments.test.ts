@@ -85,3 +85,11 @@ test('comment jobs hand the driver the verified receipt link',async()=>{
  (f.driver as any).commentOnPost=async(_i:any,_t:string,claim:()=>Promise<void>,_e?:boolean,url?:string)=>{seen=url;await claim();return {status:'pinned',commentVerified:true,pinned:true,evidence:'ok'};};
  await runPostComment(f.pool,'item','tiktok',f.driver);assert.equal(seen,'https://example.test/post/1');assert.equal(f.ledger.status,'done');
 });
+
+test('a comment job that finds the phone busy never touches the phone',async()=>{
+ const f=fixture();let resets=0;(f.driver as any).resetAfterFailure=async()=>{resets++;};
+ const client=await f.pool.connect();const query=client.query.bind(client);
+ client.query=async(sql:string,args:any[]=[])=>sql.includes('pg_try_advisory_lock')?{rows:[{locked:false}]}:query(sql,args);
+ await runPostComment(f.pool,'item','tiktok',f.driver);assert.equal(resets,0);assert.equal(f.exits,0);
+ client.query=query;await runPostComment(f.pool,'item','tiktok',f.driver);assert.equal(resets,1);
+});
