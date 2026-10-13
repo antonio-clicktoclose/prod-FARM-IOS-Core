@@ -72,3 +72,15 @@ test('Facebook own comment comes from visible screen-tree nodes, not the display
  d.request=async()=>({value:'<XCUIElementTypeImage type="XCUIElementTypeImage" name="no-comment-background" visible="true" x="127" y="424" width="176" height="116"/>'});
  assert.deepEqual(await d.commentSnapshot('Tell me why.'),{own:null,empty:true});
 });
+
+test('Facebook waits out a brief double draw of our own comment right after Send',async()=>{
+ const {FacebookComments}=await import('../src/publishing/facebook-comments.js');
+ const d=new FacebookComments('http://unused',new AbortController().signal) as any;const keys:string[]=[];let after=0;let sent=false;
+ d.verifyPost=async()=>({verified:true});d.tapElement=async()=>{};d.sleep=async()=>{};d.visible=async()=>null;
+ d.waitFor=async(_u:string,v:string)=>v==='comment-composer-confirm-button'?'send':'box';
+ d.read=async(_u:string,_v:string,attr:string)=>attr==='label'?'Comment, 0 comments':keys.length?'Hi':'';
+ d.commentSnapshot=async()=>{if(!sent)return {own:null,empty:true};after++;if(after<3)throw new Error('Two copies of our Facebook comment are visible; review by hand');return {own:{x:60,y:400,width:300,height:40},empty:false};};
+ d.request=async(route:string,body:any)=>{if(route.endsWith('/wda/keys'))keys.push(body.value[0]);if(route.endsWith('/element/send/click'))sent=true;return {value:null};};
+ d.tapPoint=async()=>{throw new Error('reached pin step');};
+ await assert.rejects(d.commentOnPost({},'Hi',async()=>{}),/reached pin step/);assert.equal(keys.length,1);assert.equal(after,3);
+});

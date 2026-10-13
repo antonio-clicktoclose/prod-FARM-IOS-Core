@@ -64,7 +64,9 @@ export class FacebookComments extends FacebookVerifier {
             await claim();claimed=true;
             await this.request(`${this.session}/element/${send}/click`,{});
             // Oct 13: founderos's comment appeared after more than 15 s (uncertain_review although it was up). Wait 45 s.
-            for(let n=0;n<45;n++){await this.sleep(1000);own=await this.ownComment(text);if(own&&!await this.visible('predicate string','name == "comment-timestamp" AND label == "Posting..."'))break;own=null;}
+            // Oct 13 12:40: right after Send, Facebook drew our one comment twice (local copy plus server copy) for a
+            // moment. After our own send, wait for that to settle instead of stopping; before typing, two copies still stop.
+            for(let n=0;n<45;n++){await this.sleep(1000);try{own=await this.ownComment(text);}catch(error){if(!/Two copies/.test(String(error)))throw error;own=null;continue;}if(own&&!await this.visible('predicate string','name == "comment-timestamp" AND label == "Posting..."'))break;own=null;}
             if(!own)throw new Error('Facebook comment receipt missing; never post again automatically');
         }
         await this.tapPoint(own.x+Math.min(own.width/2,150),own.y+own.height/2,900);
