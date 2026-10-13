@@ -2,7 +2,7 @@
  * Read-only. Matches the exact caption; Instagram Trial Reels are included in the account's media. */
 import { execFileSync } from 'node:child_process';
 
-type Receipt = { verified: true; source: string; url: string; evidence: string };
+type Receipt = { verified: true; source: string; url: string; evidence: string; sharedToFeed?: boolean };
 let secrets: { meta: string; page: string } | undefined;
 
 function loadSecrets() {
@@ -35,8 +35,9 @@ export async function metaReceipts(caption: string) {
     const page = await g(s.page, { fields: 'access_token,instagram_business_account', access_token: s.meta });
     const token = page.access_token ?? s.meta, ig = page.instagram_business_account?.id, want = normalizeText(caption);
     const out: { instagram?: Receipt; facebook?: Receipt; facebookMissingCaption?: boolean } = {};
-    if (ig) for (const m of (await g(ig + '/media', { fields: 'caption,permalink,media_product_type', limit: '25', access_token: token })).data ?? [])
-        if (normalizeText(m.caption ?? '') === want) { out.instagram = { verified: true, source: 'instagram_graph', url: m.permalink, evidence: 'Exact full caption on @antoniorevenue via the Instagram Graph API' }; break; }
+    if (ig) for (const m of (await g(ig + '/media', { fields: 'caption,permalink,media_product_type,is_shared_to_feed', limit: '25', access_token: token })).data ?? [])
+        // is_shared_to_feed is false for Trial Reels and true for regular Reels (checked on Oct 4 to 13 posts).
+        if (normalizeText(m.caption ?? '') === want) { out.instagram = { verified: true, source: 'instagram_graph', url: m.permalink, evidence: 'Exact full caption on @antoniorevenue via the Instagram Graph API', sharedToFeed: m.is_shared_to_feed }; break; }
     // Hook variants share a caption (Oct 8: heystevetan-C matched yesterday's heystevetan-A). Newest first.
     const reels = ((await g(s.page + '/video_reels', { fields: 'description,permalink_url,created_time', limit: '25', access_token: token })).data ?? [])
         .sort((a: any, b: any) => Date.parse(b.created_time ?? 0) - Date.parse(a.created_time ?? 0));

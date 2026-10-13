@@ -154,7 +154,9 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
 
         // Locate the row before changing it; Instagram can shift the composer layout.
         for (let i = 0; i < 4 && !(await this.visible('predicate string', 'type == "XCUIElementTypeSwitch" AND name CONTAINS ", Add AI Label," AND visible == 1')); i++) {
-            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 215, fromY: 780, toX: 215, toY: 280, duration: 0.15 });
+            // Oct 13: the 0.15 s flick from y=780 no longer scrolls the Trial composer; a 0.4 s drag from y=700 does.
+            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 215, fromY: 700, toX: 215, toY: 250, duration: 0.4 });
+            await this.sleep(700);
         }
         await this.ensureSwitch('Add AI Label', false, async () => {
             const row = await this.rect('predicate string', 'type == "XCUIElementTypeSwitch" AND name CONTAINS ", Add AI Label," AND visible == 1', 'AI label row');
@@ -467,6 +469,10 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
             await this.sleep(20_000);
         }
         const receipts: Record<string, { verified: boolean; url?: string; evidence: string }> = { instagram: found.instagram! };
+        // Oct 10: a "Trial" Reel went out as a regular Reel. Prove Trial after posting; never infer it from the path taken.
+        if (input.instagramTrial && found.instagram!.sharedToFeed !== false)
+            throw new ReceiptVerificationError(`Instagram posted, but not as a Trial Reel (is_shared_to_feed ${found.instagram!.sharedToFeed}); review ${found.instagram!.url}`, receipts);
+        if (input.instagramTrial) receipts.instagram!.evidence += '; Trial confirmed (is_shared_to_feed false)';
         if (facebook) receipts.facebook = found.facebook ?? await new FacebookVerifier(this.base, this.signal).verifyPost(input, false, this.mediaPath ? { mediaPath: this.mediaPath } : false);
         // Best effort: open the new Reel so the in-run first comment can be pinned. If this fails, the comment job retries later.
         try {
