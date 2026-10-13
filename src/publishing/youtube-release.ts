@@ -10,9 +10,19 @@ import type{DirectMediaStore}from'./direct-media.js';
 import type{ReleaseMedia}from'./instagram-release.js';
 import type{PostingInput}from'./model.js';
 import type{ReleaseEvidence}from'./release-policy.js';
-export function isFullYouTubeTrim(value:string,durationSeconds:number){return Number.isFinite(durationSeconds)&&durationSeconds>0&&value==='Selected from Less than a second to '+Math.round(durationSeconds)+' seconds';}
+export function isFullYouTubeTrim(value:string,durationSeconds:number){
+ // Past a minute the end reads "1 minute 5 seconds" (Oct 13). The start must still be the very beginning.
+ const prefix='Selected from Less than a second to ';
+ return Number.isFinite(durationSeconds)&&durationSeconds>0&&value.startsWith(prefix)&&galleryDurationSeconds(value.slice(prefix.length))===Math.round(durationSeconds);
+}
 
 /** Fresh native composer for one reviewed file. Submission still uses the normal one-shot claim. */
+/** Gallery cells read "45 seconds" or, past a minute, "1 minute 5 seconds" (Oct 13: a 65 s Short failed the old check). */
+export function galleryDurationSeconds(value:string){
+ const m=/^(?:(\d+) minutes?,? ?)?(?:(\d+) seconds?)?/.exec(value);
+ if(!m||(m[1]===undefined&&m[2]===undefined))return NaN;
+ return Number(m[1]??0)*60+Number(m[2]??0);
+}
 export class YouTubeRelease extends PreparedYouTubeRelease {
  constructor(base:string,signal:AbortSignal,private saved:any,private imports:DirectMediaStore){super(base,signal,saved);}
  private async nodes(){return visibleNativeNodes(String((await this.request(this.session+'/source')).value));}
@@ -148,7 +158,7 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
   if(await this.read('accessibility id','id.creation.gallery.title.create','label','Selected album')!==albumName)throw Error('YouTube selected a different album');
   const videos=(await this.request(this.session+'/elements',{using:'predicate string',value:'type == "XCUIElementTypeCell" AND name == "Video" AND visible == 1'})).value;
   if(videos.length!==1)throw Error('YouTube album must contain exactly one visible video');
-  const gallery=String((await this.request(this.session+'/element/'+this.id(videos[0])+'/attribute/value')).value),seconds=Number(/^(\d+) seconds/.exec(gallery)?.[1]);
+  const gallery=String((await this.request(this.session+'/element/'+this.id(videos[0])+'/attribute/value')).value),seconds=galleryDurationSeconds(gallery);
   if(!Number.isFinite(seconds)||Math.abs(seconds-durationSeconds)>1)throw Error('YouTube gallery duration does not match the reviewed source');
   await this.tapElement('predicate string','type == "XCUIElementTypeCell" AND name == "Video" AND visible == 1','Reviewed video');
   return this.completeSelectedVideo(input,media);
