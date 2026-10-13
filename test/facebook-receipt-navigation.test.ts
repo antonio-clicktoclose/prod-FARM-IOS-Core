@@ -56,9 +56,20 @@ test('Facebook comments wait for the list and never type on a Reel that already 
   d.tapPoint=async()=>{throw new Error('stop after finding own comment');};return {d,routes,get polls(){return polls;}};};
  const late=make('Comment, 1 comments',3);
  await assert.rejects(late.d.commentOnPost({},'Hi',async()=>{},true),/stop after finding own comment/);assert.equal(late.polls,3);
- const others=make('Comment, 2 comments',99);
- await assert.rejects(others.d.commentOnPost({},'Hi',async()=>{assert.fail('claimed');}),/not typed/);
- assert.equal(others.routes.some(r=>r.endsWith('/wda/keys')),false);
+ const bg='<XCUIElementTypeButton type="XCUIElementTypeButton" name="bottom_sheet_background" label="Close" visible="true" x="0" y="0" width="430" height="283"/>';
+ const other='<XCUIElementTypeLink type="XCUIElementTypeLink" name="comment-author-name" label="A · 1h" visible="true" x="60" y="392" width="100" height="17"/><XCUIElementTypeButton type="XCUIElementTypeButton" name="comment-body-text" label="Claude" visible="true" x="60" y="410" width="108" height="21"/><XCUIElementTypeLink type="XCUIElementTypeLink" name="comment-author-name" label="B · 2h" visible="true" x="60" y="492" width="100" height="17"/><XCUIElementTypeButton type="XCUIElementTypeButton" name="comment-body-text" label="Claude" visible="true" x="60" y="510" width="108" height="21"/>';
+ // List never loads: refuse without typing.
+ const unloaded=make('Comment, 2 comments',99);unloaded.d.tapPoint=async()=>{};unloaded.d.request=async(route:string)=>{unloaded.routes.push(route);return {value:route.endsWith('/source')?bg:null};};
+ await assert.rejects(unloaded.d.commentOnPost({},'Hi',async()=>{assert.fail('claimed');}),/not typed/);
+ assert.equal(unloaded.routes.some(r=>r.endsWith('/wda/keys')),false);
+ // Other people's comments, whole list scanned without ours: type exactly once.
+ const scanned=make('Comment, 2 comments',Infinity);scanned.d.tapPoint=async()=>{};let drags=0;
+ scanned.d.request=async(route:string)=>{scanned.routes.push(route);if(route.endsWith('/wda/dragfromtoforduration'))drags++;return {value:route.endsWith('/source')?bg+other:null};};
+ scanned.d.waitFor=async(_u:string,v:string)=>v==='comment-composer-confirm-button'?'send':'box';
+ let typed='';scanned.d.read=async(_u:string,_v:string,attr:string)=>attr==='label'?'Comment, 2 comments':typed;
+ const send=scanned.d.request;scanned.d.request=async(route:string,body:any)=>{if(route.endsWith('/wda/keys'))typed=body.value[0];return send(route,body);};
+ await assert.rejects(scanned.d.commentOnPost({},'Hi',async()=>{}),/receipt missing|stop after finding own comment/);
+ assert.equal(scanned.routes.filter(r=>r.endsWith('/wda/keys')).length,1);assert.ok(drags>=1);
 });
 
 test('Facebook own comment comes from visible screen-tree nodes, not the displayed flag',async()=>{
