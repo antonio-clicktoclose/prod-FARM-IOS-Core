@@ -40,6 +40,9 @@ try{
   else if(r&&!['armed','needs_review','cancelled'].includes(r.state))reason='Release is '+r.state;
   else if(i.results?.preparedNative)reason='Prepared composer item; re-prepare before arming';
   else if(i.results?.hourlyRecoveryExclusion||i.results?.externalYouTubeDelivery)reason='Duplicate check or earlier delivery recorded';
+  // Oct 13: cc-claude and cc-youtube went out on Sep 30 outside a release (externalPublication), were re-queued and posted
+  // again on Oct 12-13. Any verified earlier publication on a target platform keeps the item out.
+  else if(Object.entries(i.results?.externalPublication??{}).some(([p,x]:[string,any])=>x?.verified&&platforms.includes(p)))reason='Already published outside a release (externalPublication)';
   else if((i.results?.autopilotBacklog?.attempts??0)>=maxAttempts)reason=`Rescheduled ${maxAttempts} times; needs a person`;
   else if(platforms.includes('youtube')&&!(review?.coverReviewed&&review.sourceSha256===i.media.sha256&&review.relatedVideoId===i.input.youtube?.publishing?.relatedVideoId))reason='Short needs a frame-zero cover review or a Mac-made cover';
   else if(platforms.includes('tiktok')&&platforms.length>1)reason='Legacy mixed TikTok item';
