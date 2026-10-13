@@ -41,7 +41,16 @@ export class FacebookComments extends FacebookVerifier {
         // Oct 13: the composer appears before the comment list. A single check missed our comment one second
         // before it loaded. Wait for our comment or the empty-list marker before deciding anything.
         let own:Awaited<ReturnType<FacebookComments['ownComment']>>=null;let empty=false;let claimed=false;
-        for(let n=0;n<15;n++){({own,empty}=await this.commentSnapshot(text));if(own||empty)break;await this.sleep(1000);}
+        for(let n=0;n<16;n++){
+            ({own,empty}=await this.commentSnapshot(text));if(own||empty)break;
+            // Oct 13 10:42: one sheet opened with only the composer and never loaded its list. Reopen it once.
+            if(n===7&&await this.visible('accessibility id','bottom_sheet_background')){
+                await this.tapElement('accessibility id','bottom_sheet_background','Close comments');await this.sleep(1000);
+                await this.tapElement('accessibility id','shorts-comment-top-button','Facebook comments');
+                await this.waitFor('predicate string',box,'Comment as Antonio Revenue');
+            }
+            await this.sleep(1000);
+        }
         if(!own){
             if(existingOnly)throw new Error('Existing own comment not found; repair cannot create one');
             // Type only on a Reel with no comments at all, shown both on the Reel and in the loaded list.
