@@ -1,7 +1,8 @@
 /** Build one five-frame Story plan from the newest posted Instagram Reel. Never touches the phone and never approves.
  * Usage: build-story-sequence.ts SPEC.json [--save]
  * The spec names the slot, the copy and, per frame, either a second of the Reel (with a crop) or a reviewed local photo.
- * The Reel must be the newest published @antoniorevenue Reel with a verified Graph receipt; an older one is refused.
+ * The Reel must be the newest published @antoniorevenue feed Reel (not a Trial Reel) with a verified Graph receipt;
+ * an older one is refused.
  * Writes 1080x1920 PNGs to .scheduler-data/story-assets/DATE-SLUG (the runner only reads Phone Farm data), copies them
  * with manifest.json and plan.json to docs/stories/DATE/SLUG, and runs the policy review. --save stores the plan in
  * scheduler.story_sequences for its slot. Native drafts, owner approval and Share stay with the Story runner. */
@@ -33,7 +34,10 @@ try {
         r.result->'receipts'->'instagram'->>'url' ig,r.result->'receipts'->'facebook'->>'url' fb
         FROM scheduler.publishing_items i JOIN scheduler.publishing_releases r ON r.item_id=i.id
         WHERE i.status='published' AND i.input->'targets' @> '[{"platform":"instagram"}]'
-        AND r.result->'receipts'->'instagram'->>'verified'='true' ORDER BY r.updated_at DESC LIMIT 1`)).rows[0];
+        AND r.result->'receipts'->'instagram'->>'verified'='true'
+        -- Trial Reels are hidden from followers; a Story must point at a Reel on the main grid.
+        AND COALESCE(r.result->'receipts'->'instagram'->>'sharedToFeed','true')<>'false' AND COALESCE(i.input->>'instagramTrial','false')<>'true'
+        ORDER BY r.updated_at DESC LIMIT 1`)).rows[0];
     if (!reel) throw Error('No published Instagram Reel with a verified receipt');
     if (reel.id !== spec.reelId) throw Error(`The newest posted Reel is ${reel.name} (${reel.id}); update the spec instead of using an older one`);
     const media = await readFile(reel.path);
@@ -52,9 +56,10 @@ try {
         } else if (f.photo) { source = await readFile(f.photo); sourceRef = f.photo; }
         else throw Error(`Frame ${i + 1} needs reelSecond or photo`);
         // Content sits in the lower part of a dark 9:16 canvas, so the native text (centered) has open space above it.
-        const photo = !!f.photo, fit = await sharp(source).resize(photo ? { width: W, height: 1350, fit: 'cover' } : { width: 1000, height: 820, fit: 'inside' }).png().toBuffer();
+        const photo = !!f.photo, fit = await sharp(source).resize(photo ? { width: W, height: 1350, fit: 'cover' } : { width: 1000, height: 620, fit: 'inside' }).png().toBuffer();
         const meta = await sharp(fit).metadata();
-        const top = photo ? Math.round((H - meta.height!) / 2) : 1060;
+        // Native text lands around 40 to 60 % of the height (rehearsal Oct 13), so content starts below it.
+        const top = photo ? Math.round((H - meta.height!) / 2) : 1240;
         const png = await sharp({ create: { width: W, height: H, channels: 4, background: BG } })
             .composite([{ input: fit, left: Math.round((W - meta.width!) / 2), top }]).removeAlpha().png().toBuffer();
         const file = path.join(dataDir, `frame-${i + 1}.png`);

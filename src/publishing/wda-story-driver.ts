@@ -133,9 +133,48 @@ export class WdaStoryDriver extends InstagramRelease {
         return { previewPath: preview.file, previewSha256: createHash('sha256').update(preview.png).digest('hex') };
     }
 
+    /** Oct 13 (iOS 27): All albums is a lazy grid that only holds the first rows in the tree. A Story album imported
+     * earlier sits below newer video albums, so scroll the grid until the exact album exists, then let the shared
+     * picker bring it into view and select it. Never falls back to Recents. */
+    protected override async selectUploadAlbum(albumName: string) {
+        if (!/^PF-[a-f0-9]{12}$/.test(albumName)) throw Error('Exact Instagram upload album is missing');
+        const find = async () => (await this.request(this.session + '/elements', { using: 'accessibility id', value: albumName })).value as unknown[];
+        if (!await this.visible('accessibility id', 'menu-item-All albums'))
+            await this.tapElement('predicate string', 'type == "XCUIElementTypeCell" AND name BEGINSWITH "Gallery Selection," AND visible == 1', 'Upload album menu');
+        await this.tapElement('accessibility id', 'menu-item-All albums', 'All source albums');
+        await this.sleep(1000);
+        let previous: string | undefined;
+        for (let n = 0; n < 40 && (await find()).length === 0; n++) {
+            const source = String((await this.request(this.session + '/source')).value);
+            const labels = [...source.matchAll(/label="(PF-[a-f0-9]{12}), \d+ items?"/g)].map(m => m[1]).join(',');
+            if (labels === previous) throw Error('Exact Instagram album is missing after scrolling all albums; no fallback to Recents');
+            previous = labels;
+            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 215, fromY: 780, toX: 215, toY: 400, duration: 0.3 });
+            await this.sleep(700);
+        }
+        const rows = await find();
+        if (rows.length !== 1) throw Error('Exact Instagram album is missing or ambiguous; no fallback to Recents');
+        const id = this.id(rows[0] as any);
+        let r = (await this.request(this.session + '/element/' + id + '/rect')).value;
+        for (let n = 0; n < 20 && (r.y < 290 || r.y + r.height > 880); n++) {
+            const down = r.y + r.height > 880;
+            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 215, fromY: down ? 760 : 400, toX: 215, toY: down ? 460 : 700, duration: 0.3 });
+            await this.sleep(600); r = (await this.request(this.session + '/element/' + id + '/rect')).value;
+        }
+        if (r.y < 290 || r.y + r.height > 880 || r.x < 0 || r.x + r.width > 430) throw Error('Instagram source album is outside the visible list');
+        await this.tapPoint(r.x + r.width / 2, r.y + r.height / 2);
+        await this.waitFor('predicate string', 'type == "XCUIElementTypeCell" AND name == "Gallery Selection, ' + albumName + ' selected" AND visible == 1', 'Selected source album');
+    }
+
     /** The tray's add badge opens the Story gallery without a camera permission prompt. The Create menu's
      * Story mode asks for camera access, which this driver never grants. */
     private async openStoryGallery() {
+        // Home keeps its scroll position (Oct 13: the feed reopened mid-scroll, tray off screen). A second Home tap
+        // scrolls to the top; it only moves the feed.
+        for (let tap = 0; tap < 3 && !await this.visible('accessibility id', 'story-tray-cell-self'); tap++) {
+            await this.tapElement('accessibility id', 'mainfeed-tab', 'Home feed (scroll to top)');
+            await this.sleep(1500);
+        }
         // The badge is in the screen tree but not reachable by element query (its tray cell owns accessibility).
         await this.waitFor('accessibility id', 'story-tray-cell-self', 'Your story tray cell');
         const badge = storyAddBadgePoint(String((await this.request(this.session + '/source')).value));
