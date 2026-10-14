@@ -53,3 +53,17 @@ October 4 cadence update: maintain six future review slots, two each day at 09:0
 - `scripts/build-story-sequence.ts SPEC.json [--save]` builds a five-frame plan from the newest posted Reel with a verified Graph receipt. It refuses an older Reel, writes PNGs to `.scheduler-data/story-assets/DATE-SLUG`, copies them with `manifest.json` and `plan.json` to `docs/stories/DATE/SLUG`, runs the policy review and, with `--save`, stores the plan for its slot. It never touches the phone and never approves.
 - Video slots now sit at :22 on odd Pacific hours, plus some extra on-the-hour releases. A 09:00 or 17:00 Story has about 22 minutes before the next :22 video. The runner does not start within 15 minutes of an armed video.
 - The runner still accepts PNG photo frames only. Native Reel share and B-roll frames are not supported yet.
+
+## October 13, 2026 (night): Stories run as scripts, no model
+
+**Standing approval (Antonio, chat, Oct 13):** script-built five-frame Stories from his own published feed Reels, with text from that Reel's caption or fixed neutral lines. Recorded in `storySchedule.standingApproval`. Any other format still needs his approval of the native drafts.
+
+How it runs (local worker, no Claude):
+1. `ensureSpotlightPlans` builds a `reel_spotlight` plan for each 09:00 and 17:00 slot 1 to 30 hours ahead, from the newest unused feed Reel (verified receipt, not Trial). Frames are full-bleed stills of that Reel; text comes from its caption (CTA sentences dropped), a keyword CTA, or fixed lines. A plan that fails review is not saved.
+2. `captureNextDraft` captures the five native drafts on the phone (no Share), retrying up to three times; "Phone busy" does not use an attempt.
+3. Spotlights are approved under the standing approval; until the WDA flow holds a pilot certificate the job runs as the pilot.
+4. At the slot, one claim and one Share per frame. Receipts: Instagram Graph shows exactly one new Story; Facebook is the cross-post proven on the share sheet (`facebook_crosspost`), because the Page `/stories` edge does not list Stories cross-posted from Instagram (the Facebook app showed the Story ring on Oct 13).
+
+iOS 27 driver facts: with a Story live, the tray add badge is `story-tray-add-button`; Select album keeps its sideways scroll, so albums are found by the picker's Search with the exact PF- name; after Share, "Also share to" is closed with Done only.
+
+Oct 13 results: 17:00 pilot posted frame 1 on Instagram and stopped (Facebook receipt rule, since fixed). No-Share rehearsal with a Story live: 5 frames in 547 s. The worker then built, captured and armed the Oct 14 09:00 spotlight by itself.
