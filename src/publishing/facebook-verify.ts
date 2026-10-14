@@ -78,7 +78,10 @@ export class FacebookVerifier extends WdaApp {
         await this.start('com.facebook.Facebook');
         await this.request(this.session+'/url',{url});
         await this.request(this.session+'/appium/settings',{settings:{defaultActiveApplication:'com.facebook.Facebook'}});
-        await this.waitFor('predicate string','name == "shorts-owner-component" AND label BEGINSWITH "Antonio Revenue" AND visible == 1','Antonio Revenue Reel',20_000);
+        // Read the owner from the screen tree: WDA reported this on-screen control as not displayed on some Reels (Oct 13).
+        let owner=false;
+        for(let n=0;n<20&&!owner;n++){owner=visibleNativeNodes((await this.request(this.session+'/source')).value).some(x=>x.name==='shorts-owner-component'&&x.label.startsWith('Antonio Revenue'));if(!owner)await this.sleep(1000);}
+        if(!owner) throw new Error('Phone control is missing: Antonio Revenue Reel');
         for(let n=0;n<10&&!await this.visible('accessibility id','fbreels-description-collapse')&&!await this.visible('accessibility id','fbreels-description-expand');n++) await this.sleep(1000);
         if (!await this.visible('accessibility id','fbreels-description-expand')) await this.tapElement('accessibility id','fbreels-description-collapse','Expand Reel caption',10_000);
         const caption=await this.read('accessibility id','fbreels-description-expand','label','Facebook caption');
