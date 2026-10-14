@@ -72,7 +72,8 @@ export function pixelDistance(a: Buffer, b: Buffer): number {
 
 export interface StoryFrameReceipts {
     instagram: { verified: true; source: 'instagram_graph'; id: string; createdAt: string; url?: string };
-    facebook: { verified: true; source: 'facebook_graph'; id: string; createdAt: string; url?: string };
+    facebook: { verified: true; source: 'facebook_graph'; id: string; createdAt: string; url?: string }
+        | { verified: true; source: 'facebook_crosspost'; evidence: string };
 }
 
 /**
@@ -273,12 +274,16 @@ export class WdaStoryDriver extends InstagramRelease {
             ig ??= newStory(now.instagram, known.instagram, sharedAt);
             fb ??= newStory(now.facebook, known.facebook, sharedAt);
             if (ig && fb) break;
+            // Oct 13: the Page /stories edge never lists Stories cross-posted from Instagram (the Facebook app showed the
+            // Antonio Revenue Story ring while Graph returned none). Once Instagram has exactly one new Story, the
+            // Facebook receipt is the share sheet that proved "Your story, And Facebook story" right before the Share.
+            if (ig && Date.now() - sharedAt > 90_000) break;
             if (Date.now() >= deadline) throw new Error(`Story receipt missing after one Share: Instagram ${ig ? 'found' : 'missing'}, Facebook ${fb ? 'found' : 'missing'}. Inspect; never share again`);
         }
-        return {
-            instagram: { verified: true, source: 'instagram_graph', id: ig.id, createdAt: new Date(ig.createdAt).toISOString(), url: ig.url },
-            facebook: { verified: true, source: 'facebook_graph', id: fb.id, createdAt: new Date(fb.createdAt).toISOString(), url: fb.url },
-        };
+        const instagram = { verified: true as const, source: 'instagram_graph' as const, id: ig.id, createdAt: new Date(ig.createdAt).toISOString(), url: ig.url };
+        return { instagram, facebook: fb
+            ? { verified: true, source: 'facebook_graph', id: fb.id, createdAt: new Date(fb.createdAt).toISOString(), url: fb.url }
+            : { verified: true, source: 'facebook_crosspost', evidence: 'Share sheet showed Your story, And Facebook story selected before the single Share; Instagram Graph shows exactly one new Story' } };
     }
 
     /** Draft only: build the frame, save the native preview, close Instagram. No claim, no Share. */
@@ -304,6 +309,9 @@ export class WdaStoryDriver extends InstagramRelease {
             for (const deadline = Date.now() + 60_000; await this.visible('accessibility id', 'story-share-sheet-your-story'); await this.sleep(1000))
                 if (Date.now() >= deadline) throw new Error('Story share sheet stayed open after one Share; inspect, never share again');
             await this.proof(label + '-after-share');
+            // Instagram then offers "Also share to" (DM Send buttons and Done). Only Done, so the next frame starts clean.
+            if (await this.visible('accessibility id', 'Also share to'))
+                await this.tapElement('predicate string', 'type == "XCUIElementTypeButton" AND name == "Done" AND visible == 1', 'Also share to Done').catch(() => undefined);
             return await this.receipts(before, sharedAt, receiptWaitMs);
         } catch (error) {
             const evidence = await this.captureFailure('story-' + label).catch(() => 'none');

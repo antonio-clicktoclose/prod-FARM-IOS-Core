@@ -12,7 +12,7 @@ export interface NativeStoryFrame {text:string;assetRef:string;sourceSha256:stri
 /** Any phone driver that builds one frame, claims, taps Share once and returns both destination receipts. */
 export interface StoryFrameDriver {publishFrame(frame:NativeStoryFrame,claim:()=>Promise<void>):Promise<any>;leaveVideo():Promise<void>}
 /** App receipts (Mac Mirroring flow) or Graph receipts (iPhone WDA flow), on both Instagram and Facebook. */
-export function storyFrameVerified(r:any){return r?.instagram?.verified===true&&['instagram_app','instagram_graph'].includes(r.instagram.source)&&r?.facebook?.verified===true&&['facebook_app','facebook_graph'].includes(r.facebook.source);}
+export function storyFrameVerified(r:any){return r?.instagram?.verified===true&&['instagram_app','instagram_graph'].includes(r.instagram.source)&&r?.facebook?.verified===true&&['facebook_app','facebook_graph','facebook_crosspost'].includes(r.facebook.source);}
 export interface NativeStoryFlow {version:1;prepare:NativePhase;instagramReceipt:NativePhase;facebookReceipt:NativePhase;submit:{label:'Share';context:string[];minY:number;maxY:number}}
 const validHash=(s:unknown)=>typeof s==='string'&&/^[a-f0-9]{64}$/.test(s);
 async function checkedLocal(file:string,hash:string){

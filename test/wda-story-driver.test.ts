@@ -88,3 +88,11 @@ test('a Story revision survives a jsonb key reorder', async () => {
     const { canonicalJson } = await import('../src/publishing/mirroring-stories.js');
     assert.equal(canonicalJson({ b: 1, a: [{ y: 2, x: null }] }), canonicalJson({ a: [{ x: null, y: 2 }], b: 1 }));
 });
+
+test('a Facebook cross-post receipt counts only with a verified Instagram Graph receipt', async () => {
+    const { storyFrameVerified } = await import('../src/publishing/mirroring-stories.js');
+    const fb = { verified: true, source: 'facebook_crosspost' };
+    assert.equal(storyFrameVerified({ instagram: { verified: true, source: 'instagram_graph' }, facebook: fb }), true);
+    assert.equal(storyFrameVerified({ instagram: { verified: false, source: 'instagram_graph' }, facebook: fb }), false);
+    assert.equal(storyFrameVerified({ instagram: { verified: true, source: 'instagram_graph' }, facebook: { verified: false, source: 'facebook_crosspost' } }), false);
+});
