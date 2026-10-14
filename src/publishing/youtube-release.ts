@@ -12,8 +12,9 @@ import type{PostingInput}from'./model.js';
 import type{ReleaseEvidence}from'./release-policy.js';
 export function isFullYouTubeTrim(value:string,durationSeconds:number){
  // Past a minute the end reads "1 minute 5 seconds" (Oct 13). The start must still be the very beginning.
+ // YouTube rounds from the video track, not the container: a 44.52 s file read "to 44 seconds" (Oct 13), so allow under one second.
  const prefix='Selected from Less than a second to ';
- return Number.isFinite(durationSeconds)&&durationSeconds>0&&value.startsWith(prefix)&&galleryDurationSeconds(value.slice(prefix.length))===Math.round(durationSeconds);
+ return Number.isFinite(durationSeconds)&&durationSeconds>0&&value.startsWith(prefix)&&Math.abs(galleryDurationSeconds(value.slice(prefix.length))-durationSeconds)<1;
 }
 
 /** Fresh native composer for one reviewed file. Submission still uses the normal one-shot claim. */
