@@ -53,7 +53,7 @@ async function captureNextDraft(pool:Pool){
  const row=(await pool.query(`SELECT s.id,s.draft FROM scheduler.story_sequences s WHERE s.state='needs_review' AND s.review->>'valid'='true'
   AND s.run_at>now()+interval '1 hour' AND s.run_at<now()+interval '30 hours'
   AND NOT EXISTS(SELECT 1 FROM scheduler.mirroring_story_jobs j WHERE j.sequence_id=s.id)
-  AND NOT EXISTS(SELECT 1 FROM scheduler.story_draft_captures a WHERE a.sequence_id=s.id AND (a.state<>'failed' OR a.attempts>=3 OR a.attempted_at>now()-interval '20 minutes'))
+  AND NOT EXISTS(SELECT 1 FROM scheduler.story_draft_captures a WHERE a.sequence_id=s.id AND (a.state<>'failed' OR a.attempts>=3 OR a.attempted_at>now()-(CASE WHEN a.result->>'error'='Phone busy' THEN interval '2 minutes' ELSE interval '20 minutes' END)))
   ORDER BY s.run_at LIMIT 1`)).rows[0];
  if(!row)return;
  const claimed=await pool.query(`INSERT INTO scheduler.story_draft_captures(sequence_id,state) VALUES($1,'running')
@@ -62,7 +62,10 @@ async function captureNextDraft(pool:Pool){
  if(!claimed.rowCount)return;
  try{const r=await captureDirectStoryDraft(pool,row.id);await pool.query(`UPDATE scheduler.story_draft_captures SET state='captured',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify(r)]);
   if(row.draft?.format===storySchedule.standingApproval.format)await approveUnderStandingApproval(pool,r.id,r.revision);}
- catch(e){await pool.query(`UPDATE scheduler.story_draft_captures SET state='failed',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify({error:e instanceof Error?e.message:String(e)})]);}
+ catch(e){const msg=e instanceof Error?e.message:String(e);
+  // Another phone job held the lock: nothing ran, so this is not an attempt. Try again on a later tick.
+  if(msg==='Phone busy'||/video release is due soon/.test(msg))await pool.query(`UPDATE scheduler.story_draft_captures SET state='failed',attempts=GREATEST(attempts-1,0),result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify({error:msg})]);
+  else await pool.query(`UPDATE scheduler.story_draft_captures SET state='failed',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify({error:msg})]);}
 }
 /** Antonio's standing approval (Oct 13, 2026) covers script-built spotlights of his own published feed Reels only.
  * The native previews are still captured and kept. Until the WDA flow holds a pilot certificate, the job runs as the pilot. */

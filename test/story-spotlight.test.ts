@@ -14,7 +14,7 @@ test('spotlight text comes only from the caption, a keyword CTA or fixed lines',
 
 test('a short caption falls back to neutral lines and a profile CTA without a keyword', () => {
     const t = spotlightTexts('Big news today for every sales team.\n#ai');
-    assert.deepEqual(t.slice(1, 4), SPOTLIGHT_FALLBACKS);
+    assert.deepEqual(t.slice(1, 4), SPOTLIGHT_FALLBACKS.slice(0, 3));
     assert.equal(t[4], 'Watch the full reel on my profile.');
 });
 
@@ -32,4 +32,12 @@ test('a spotlight is rejected when frames mix Reels or repeat an image', () => {
     assert.equal(reviewStoryDraft(draft(repeated)).valid, false);
     const unchecked = stages.map((s, i) => frame(i + 1, s)); (unchecked[2] as any).automatedChecks = false;
     assert.equal(reviewStoryDraft(draft(unchecked)).valid, false);
+});
+
+test('a caption whose pitch shares the Comment line still yields five texts', () => {
+    const t = spotlightTexts("Comment YOUTUBE and I'll send you 11 free Claude skills that run most of your YouTube workflow. One writes scripts from 21 hook formulas, and the others handle titles. One even breaks down the top videos in your niche.\n\n#claude #ai");
+    assert.equal(t.length, 5);
+    assert.ok(t.every(x => typeof x === 'string' && x.length > 0));
+    assert.equal(t[0], 'One writes scripts from 21 hook formulas, and the others handle titles.');
+    assert.equal(t[4], "Comment YOUTUBE on the reel and I'll send it to you.");
 });

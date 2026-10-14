@@ -7,8 +7,9 @@ import path from 'node:path';
 import type { Pool } from 'pg';
 import sharp from 'sharp';
 import { StorySequenceStore } from './story-sequences.js';
+import { reviewStoryDraft } from './story-policy.js';
 
-export const SPOTLIGHT_FALLBACKS = ['The full breakdown is in the reel.', 'Watch it to the end.', 'Save it so you can find it later.'];
+export const SPOTLIGHT_FALLBACKS = ['New reel is up on my profile.', 'The full breakdown is in the reel.', 'Watch it to the end.', 'Save it so you can find it later.'];
 const PHONE = '00008130-000229EE1AA0001C', W = 1080, H = 1920;
 
 /** Caption to five frame texts. Only the caption's own sentences, a keyword CTA, or fixed neutral fallbacks. */
@@ -16,9 +17,10 @@ export function spotlightTexts(caption: string): string[] {
     const keyword = caption.match(/\bComment\s+["“']?([A-Z][A-Z0-9]{1,19})["”']?/)?.[1];
     const clean = (s: string) => s.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '').replace(/^\s*(\d+[.)]|[-•*])\s*/, '').replace(/\s+/g, ' ').trim();
     const lines = caption.split('\n').map(clean)
-        .filter(l => l && !l.startsWith('#') && !/\bcomment\b/i.test(l) && !/^follow @/i.test(l) && !/@antoniorevenue/i.test(l));
+        .filter(l => l && !l.startsWith('#') && !/^follow @/i.test(l) && !/@antoniorevenue/i.test(l));
+    // Split first, then drop CTA sentences: some captions put the whole pitch on the "Comment X" line (Oct 13, YOUTUBE).
     const sentences = lines.flatMap(l => l.match(/[^.!?]+[.!?]*/g) ?? []).map(s => s.trim())
-        .filter(s => { const w = s.split(/\s+/).length; return w >= 3 && w <= 25 && s.length <= 170 && !s.endsWith(':'); });
+        .filter(s => { const w = s.split(/\s+/).length; return w >= 3 && w <= 25 && s.length <= 170 && !s.endsWith(':') && !/\bcomment\b/i.test(s) && !s.includes('#'); });
     const picked = [...new Set(sentences)].slice(0, 4);
     for (const f of SPOTLIGHT_FALLBACKS) if (picked.length < 4 && !picked.includes(f)) picked.push(f);
     const reply = keyword ? `Comment ${keyword} on the reel and I'll send it to you.` : 'Watch the full reel on my profile.';
@@ -79,6 +81,8 @@ export async function buildSpotlightPlan(pool: Pool, runAt: Date) {
         frames.push({ stage: stages[i], text: texts[i], assetKind: 'reel_frame', assetRef: file, automatedChecks: true, claimReview: 'source_checked', sourceRef: reel.url });
     }
     const draft = { policyVersion: 2, format: 'reel_spotlight', nativeText: true, musicStyle: 'music_only', sourceReelId: reel.id, frames };
+    const review = reviewStoryDraft(draft);
+    if (!review.valid) throw Error('Spotlight plan failed review: ' + review.errors.join(' '));
     return new StorySequenceStore(pool).save({ requestId: `spotlight-${runAt.toISOString().replace(/[:.]/g, '-')}`, title: 'Spotlight: ' + texts[0]!.slice(0, 120),
         deviceUdid: PHONE, account: 'antoniorevenue', facebookAccount: '61584693917444', runAt: runAt.toISOString(), draft });
 }
