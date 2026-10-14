@@ -111,7 +111,13 @@ export class FacebookComments extends FacebookVerifier {
         // A pinned comment moves to the top of the list; reopen the sheet there if it left the screen.
         if(!own){await this.reopenSheet(box);own=(await this.scanComments(text)).own;}
         if(!own)throw new Error('Pinned comment is not visible');
-        await this.tapPoint(own.x+Math.min(own.width/2,150),own.y+own.height/2,900);
+        // Oct 13: twice the pin landed but the readback long-press opened nothing (Facebook was still showing its
+        // pinned confirmation). Retry the read-only long-press, finding our comment again each time.
+        for(let attempt=0;;attempt++){
+            await this.tapPoint(own.x+Math.min(own.width/2,150),own.y+own.height/2,900);
+            try{await this.waitFor('accessibility id','fds-glimpse-preview','Own comment menu',6_000);break;}
+            catch(error){if(attempt>=2)throw error;await this.sleep(2000);own=await this.ownComment(text);if(!own)throw new Error('Pinned comment is not visible');}
+        }
         words=await this.more();
         if(!words.some(w=>/^Unpin$/i.test(w.text)))throw new Error('Facebook pin readback failed');
         return {status:'pinned',commentVerified:true,pinned:true,evidence:'Exact comment and author matched. Reopened native menu offers Unpin Comment.'};
