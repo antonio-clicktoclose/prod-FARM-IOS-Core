@@ -69,7 +69,7 @@ try {
         frames.push({ stage: f.stage, text: f.text, assetKind: f.assetKind, assetRef: file, visualReviewed: true, claimReview: f.claimReview,
             ...(f.claimReview === 'source_checked' ? { sourceRef: f.sourceNote ? `${sourceRef}; ${f.sourceNote}` : sourceRef } : {}) });
     }
-    const draft = { policyVersion: 2, format: spec.format, nativeText: true, musicStyle: 'music_only', frames };
+    const draft = { policyVersion: 2, format: spec.format, nativeText: true, musicStyle: 'music_only', sourceReelId: reel.id, frames };
     const review = reviewStoryDraft(draft);
     const plan = { requestId: `story-${date}-${spec.slug}`, title: spec.title, deviceUdid: PHONE, account: 'antoniorevenue',
         facebookAccount: '61584693917444', runAt: spec.runAt, draft };

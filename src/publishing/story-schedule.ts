@@ -8,6 +8,9 @@ export const storySchedule = {
     times: publishingCadence.storyTimes, sequencesPerDay: publishingCadence.storySequencesPerDay,
     enabled: true, publicationEnabled: false, planningDays: 3, preparationLeadHours: 24,
     nativePilotVerified: true,
+    // Antonio, in chat on 2026-10-13: Stories and posting must run with no model, as repeatable scripts.
+    standingApproval: { format: 'reel_spotlight', grantedBy: 'Antonio (chat, 2026-10-13)',
+        scope: 'script-built five-frame Stories from his own published feed Reels, text from that Reel caption or fixed neutral lines' },
     blockers: ['Select and review the exact photos, B-roll clips and source post.', 'Approve the actual native drafts for each new sequence.', 'Build and test the unattended publisher with per-frame claims and both platform receipts.'],
 } as const;
 export function nextStorySlot(now: Date): Date {

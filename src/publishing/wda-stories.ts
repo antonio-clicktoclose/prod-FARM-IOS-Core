@@ -1,7 +1,7 @@
 import{readFile}from'node:fs/promises';import{createHash}from'node:crypto';import path from'node:path';import type{Pool}from'pg';
 import{NativeStoryStore,nativeStoryRevision,type NativeStoryFrame}from'./mirroring-stories.js';
 import{DirectMediaStore}from'./direct-media.js';import{NativeMuteGuard}from'./native-mute.js';import{loadRegisteredDevices}from'../devices/registry.js';
-import{WdaStoryDriver}from'./wda-story-driver.js';import{reviewStoryDraft}from'./story-policy.js';
+import{WdaStoryDriver}from'./wda-story-driver.js';import{ensureSpotlightPlans}from'./story-spotlight.js';import{storySchedule}from'./story-schedule.js';import{reviewStoryDraft}from'./story-policy.js';
 // Story code only. Video driver changes do not invalidate an approved Story; Story driver changes need a new pilot.
 const storySources=['src/publishing/wda-stories.ts','src/publishing/wda-story-driver.ts','src/publishing/story-receipts.ts','src/publishing/mirroring-stories.ts','src/publishing/story-policy.ts'];
 export async function directStoryFingerprint(){const h=createHash('sha256');for(const p of storySources)h.update(await readFile(p));return h.digest('hex');}
@@ -42,21 +42,35 @@ export async function captureDirectStoryDraft(pool:Pool,sequenceId:string,frames
  const saved=await store.prepare(sequenceId,captured,fingerprint);return{id:saved.id,revision:saved.revision,state:saved.state,shareAttempted:false,previewUrls:[1,2,3,4,5].map(n=>'/api/publishing/stories/native/'+saved.id+'/frames/'+n)};
  }finally{await d?.leaveVideo().catch(()=>{});if(locked)await c.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[phone]);c.release();}
 }
-/** One automatic draft capture per valid plan, 1 to 30 hours ahead, away from video slots. Never shares. */
+/** Automatic no-Share draft capture for valid plans 1 to 30 hours ahead, away from video slots. A failed capture
+ * (usually "Phone busy") is retried up to three times, 20 minutes apart. Never shares. */
 let capturesReady=false;
 async function captureNextDraft(pool:Pool){
- if(!capturesReady)await pool.query(`CREATE TABLE IF NOT EXISTS scheduler.story_draft_captures(sequence_id uuid PRIMARY KEY REFERENCES scheduler.story_sequences(id),
+ if(!capturesReady){await pool.query(`CREATE TABLE IF NOT EXISTS scheduler.story_draft_captures(sequence_id uuid PRIMARY KEY REFERENCES scheduler.story_sequences(id),
   state text NOT NULL CHECK(state IN('running','captured','failed')),result jsonb NOT NULL DEFAULT '{}',attempted_at timestamptz NOT NULL DEFAULT now())`);
- capturesReady=true;
+  await pool.query(`ALTER TABLE scheduler.story_draft_captures ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 1`);capturesReady=true;}
  if(await storyBlockedByVideo(pool,40))return;
- const row=(await pool.query(`SELECT s.id FROM scheduler.story_sequences s WHERE s.state='needs_review' AND s.review->>'valid'='true'
+ const row=(await pool.query(`SELECT s.id,s.draft FROM scheduler.story_sequences s WHERE s.state='needs_review' AND s.review->>'valid'='true'
   AND s.run_at>now()+interval '1 hour' AND s.run_at<now()+interval '30 hours'
   AND NOT EXISTS(SELECT 1 FROM scheduler.mirroring_story_jobs j WHERE j.sequence_id=s.id)
-  AND NOT EXISTS(SELECT 1 FROM scheduler.story_draft_captures a WHERE a.sequence_id=s.id) ORDER BY s.run_at LIMIT 1`)).rows[0];
+  AND NOT EXISTS(SELECT 1 FROM scheduler.story_draft_captures a WHERE a.sequence_id=s.id AND (a.state<>'failed' OR a.attempts>=3 OR a.attempted_at>now()-interval '20 minutes'))
+  ORDER BY s.run_at LIMIT 1`)).rows[0];
  if(!row)return;
- if(!(await pool.query(`INSERT INTO scheduler.story_draft_captures(sequence_id,state) VALUES($1,'running') ON CONFLICT DO NOTHING RETURNING sequence_id`,[row.id])).rowCount)return;
- try{const r=await captureDirectStoryDraft(pool,row.id);await pool.query(`UPDATE scheduler.story_draft_captures SET state='captured',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify(r)]);}
+ const claimed=await pool.query(`INSERT INTO scheduler.story_draft_captures(sequence_id,state) VALUES($1,'running')
+  ON CONFLICT(sequence_id) DO UPDATE SET state='running',attempts=story_draft_captures.attempts+1,attempted_at=now()
+  WHERE story_draft_captures.state='failed' AND story_draft_captures.attempts<3 RETURNING sequence_id`,[row.id]);
+ if(!claimed.rowCount)return;
+ try{const r=await captureDirectStoryDraft(pool,row.id);await pool.query(`UPDATE scheduler.story_draft_captures SET state='captured',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify(r)]);
+  if(row.draft?.format===storySchedule.standingApproval.format)await approveUnderStandingApproval(pool,r.id,r.revision);}
  catch(e){await pool.query(`UPDATE scheduler.story_draft_captures SET state='failed',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify({error:e instanceof Error?e.message:String(e)})]);}
+}
+/** Antonio's standing approval (Oct 13, 2026) covers script-built spotlights of his own published feed Reels only.
+ * The native previews are still captured and kept. Until the WDA flow holds a pilot certificate, the job runs as the pilot. */
+async function approveUnderStandingApproval(pool:Pool,jobId:string,revision:string){
+ const store=new NativeStoryStore(pool);
+ await store.approve(jobId,revision,[1,2,3,4,5],true);
+ await pool.query(`UPDATE scheduler.mirroring_story_jobs SET result=result||$2::jsonb WHERE id=$1`,[jobId,JSON.stringify({approval:storySchedule.standingApproval.grantedBy+': '+storySchedule.standingApproval.scope})]);
+ if(!(await directStoryStatus(pool)).qualified)await store.requestPilot(jobId).catch(()=>undefined);
 }
 export async function runDirectStories(pool:Pool,signal:AbortSignal){
  const s=await directStoryStatus(pool),store=new NativeStoryStore(pool);
@@ -65,5 +79,6 @@ export async function runDirectStories(pool:Pool,signal:AbortSignal){
   WHERE state='armed' AND fingerprint<>$1 AND sequence_id IN(SELECT id FROM scheduler.story_sequences WHERE run_at<=now())`,[s.fingerprint]);
  if(await storyBlockedByVideo(pool,15))return;
  await store.tick(s.fingerprint,row=>driver(pool,row,signal,path.resolve('.scheduler-data/publishing/wda-story-runs',row.id)),!s.qualified,'stories_wda');
+ await ensureSpotlightPlans(pool);
  await captureNextDraft(pool);
 }
