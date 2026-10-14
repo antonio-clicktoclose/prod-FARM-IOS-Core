@@ -10,6 +10,7 @@ import { liveStories, newStory, type LiveStory, type StoryState } from './story-
 /** Music Antonio approved for the NORA Story (Oct 1), added in Instagram's "music only" style (no sticker). */
 export const STORY_TRACK = { title: 'Stardust (Instrumental), Royalty Free', artist: 'Giulio Cercato', search: 'Stardust Giulio Cercato' } as const;
 export const STORY_ACCOUNT = 'antoniorevenue';
+const MISSING_ALBUM = 'Exact Instagram album is not on the phone (album search found nothing)';
 
 type Tag = Record<string, string>;
 /** Visible accessibility nodes with every attribute, including value (radio and style-cell state). */
@@ -39,11 +40,12 @@ export function storyShareSheetCheck(xml: string): { ok: boolean; reason: string
     return { ok: true, reason: 'Your story and Facebook story selected; Close Friends off; one Share button' };
 }
 
-/** Center of the Add-to-Story badge inside the own "Your story" tray cell (mapped 2026-10-07 at 68,174 25x25). */
+/** Center of the Add-to-Story badge inside the own "Your story" tray cell (mapped 2026-10-07 at 68,174 25x25). With a
+ * Story already live it is the button story-tray-add-button at the same spot (mapped 2026-10-13). */
 export function storyAddBadgePoint(xml: string): { x: number; y: number } {
     const tags = visibleTags(xml), cells = tags.filter(t => t.type === 'XCUIElementTypeCell' && t.name === 'story-tray-cell-self');
     if (cells.length !== 1) throw new Error('Your story tray cell is missing or ambiguous');
-    const c = box(cells[0]!), badges = tags.filter(t => t.name === 'Add-to-Story-24').map(box)
+    const c = box(cells[0]!), badges = tags.filter(t => t.name === 'Add-to-Story-24' || (t.type === 'XCUIElementTypeButton' && t.name === 'story-tray-add-button')).map(box)
         .filter(b => b.x >= c.x && b.x + b.w <= c.x + c.w && b.y >= c.y && b.y + b.h <= c.y + c.h);
     if (badges.length !== 1 || c.y < 90 || c.y > 300) throw new Error('Add to story badge is missing or outside the Story tray');
     return { x: Math.round(badges[0]!.x + badges[0]!.w / 2), y: Math.round(badges[0]!.y + badges[0]!.h / 2) };
@@ -105,8 +107,8 @@ export class WdaStoryDriver extends InstagramRelease {
         try { return await this.buildFrame(frame, label); }
         catch (error) {
             // Oct 13: a Story photo's PF- album vanished from the phone after its import was recorded. Only after the
-            // whole album row was swiped: forget that one import, close Instagram, import a fresh copy and rebuild once.
-            if (reimported || !String(error instanceof Error ? error.message : error).includes('missing after swiping the whole album row')) throw error;
+            // album search found nothing: forget that one import, close Instagram, import a fresh copy and rebuild once.
+            if (reimported || !String(error instanceof Error ? error.message : error).includes(MISSING_ALBUM)) throw error;
             await this.resetAfterFailure().catch(() => undefined);
             if (!await this.storyImports.forgetMissingAlbum(this.deviceUdid, frame.media.sha256)) throw error;
             return this.prepareFrame(frame, label, true);
@@ -146,42 +148,27 @@ export class WdaStoryDriver extends InstagramRelease {
         return { previewPath: preview.file, previewSha256: createHash('sha256').update(preview.png).digest('hex') };
     }
 
-    /** Oct 13 (iOS 27): "Select album" shows our PF- albums in one sideways row that loads lazily. A Story album
-     * imported earlier sits right of newer video albums, outside the tree. Swipe that row left until the exact album
-     * exists, bring it fully on screen, then tap it. Stops when the row no longer changes. Never falls back to Recents. */
+    /** Oct 13 (iOS 27): the Select album row keeps its scroll position between frames and loads lazily, so swiping
+     * misses older albums. Search for the exact PF- album name instead (mapped live Oct 13: Search >
+     * search-text-input > one cell "PF-xxxxxxxxxxxx, 1 items"). No result means the album is gone from the phone. */
     protected override async selectUploadAlbum(albumName: string) {
         if (!/^PF-[a-f0-9]{12}$/.test(albumName)) throw Error('Exact Instagram upload album is missing');
-        const tiles = async () => [...String((await this.request(this.session + '/source')).value)
-            .matchAll(/<XCUIElementTypeButton\b[^>]*label="(PF-[^"]+), [\d,]+ items?"[^>]*\bx="(-?\d+)"[^>]*\by="(-?\d+)"[^>]*\bheight="(\d+)"/g)]
-            .map(m => ({ name: m[1]!, x: Number(m[2]), y: Number(m[3]), h: Number(m[4]) }));
         if (!await this.visible('accessibility id', 'menu-item-All albums'))
             await this.tapElement('predicate string', 'type == "XCUIElementTypeCell" AND name BEGINSWITH "Gallery Selection," AND visible == 1', 'Upload album menu');
         await this.tapElement('accessibility id', 'menu-item-All albums', 'All source albums');
-        await this.sleep(1000);
-        const find = async () => (await this.request(this.session + '/elements', { using: 'accessibility id', value: albumName })).value as unknown[];
-        let previous: string | undefined;
-        for (let n = 0; n < 90 && (await find()).length === 0; n++) {
-            const row = await tiles();
-            const names = row.map(t => `${t.name}@${t.x}`).join(',');
-            if (!row.length || names === previous) throw Error('Exact Instagram album is missing after swiping the whole album row; no fallback to Recents');
-            previous = names;
-            const y = Math.round(row[0]!.y + row[0]!.h / 2);
-            if (y < 110 || y > 880) throw Error('The album row is off screen');
-            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: 390, fromY: y, toX: 60, toY: y, duration: 0.3 });
-            await this.sleep(700);
-        }
-        const rows = await find();
-        if (rows.length !== 1) throw Error('Exact Instagram album is missing or ambiguous; no fallback to Recents');
-        const id = this.id(rows[0] as any);
-        let r = (await this.request(this.session + '/element/' + id + '/rect')).value;
-        for (let n = 0; n < 12 && (r.x < 0 || r.x + r.width > 430); n++) {
-            const left = r.x + r.width > 430, y = Math.max(120, r.y - 60);
-            await this.request(this.session + '/wda/dragfromtoforduration', { fromX: left ? 330 : 100, fromY: y, toX: left ? 180 : 250, toY: y, duration: 0.3 });
-            await this.sleep(600); r = (await this.request(this.session + '/element/' + id + '/rect')).value;
-        }
-        if (r.y < 100 || r.y + r.height > 880 || r.x < 0 || r.x + r.width > 430) throw Error('Instagram source album is outside the visible list');
-        await this.tapPoint(r.x + r.width / 2, r.y + r.height / 2);
-        await this.waitFor('predicate string', 'type == "XCUIElementTypeCell" AND name == "Gallery Selection, ' + albumName + ' selected" AND visible == 1', 'Selected source album');
+        await this.tapElement('predicate string', '(label == "Search" OR name == "Search") AND visible == 1', 'Album search', 15_000);
+        const field = await this.waitFor('accessibility id', 'search-text-input', 'Album search field', 15_000);
+        await this.request(`${this.session}/element/${field}/value`, { value: [albumName] });
+        const cell = `type == "XCUIElementTypeCell" AND name BEGINSWITH "${albumName}, " AND visible == 1`;
+        await this.waitFor('predicate string', cell, 'Album search result', 10_000).catch(() => undefined);
+        const hits = (await this.request(this.session + '/elements', { using: 'predicate string', value: cell })).value as unknown[];
+        if (hits.length === 0) throw Error(MISSING_ALBUM + '; no fallback to Recents');
+        // Duplicates of the same name are copies of the same image (the name is its hash prefix), e.g. after a re-import.
+        const names = await Promise.all(hits.map(async h => String((await this.request(this.session + '/element/' + this.id(h as any) + '/attribute/name')).value)));
+        if (names.some(n => n !== `${albumName}, 1 items` && n !== `${albumName}, 1 item`)) throw Error('Exact Instagram album is ambiguous; no fallback to Recents');
+        const r = (await this.request(this.session + '/element/' + this.id(hits[0] as any) + '/rect')).value;
+        await this.tapPoint(r.x + r.width / 2, r.y + Math.min(r.height / 2, 100));
+        await this.waitFor('predicate string', 'type == "XCUIElementTypeCell" AND name == "Gallery Selection, ' + albumName + ' selected" AND visible == 1', 'Selected source album', 15_000);
     }
 
     /** The tray's add badge opens the Story gallery without a camera permission prompt. The Create menu's
