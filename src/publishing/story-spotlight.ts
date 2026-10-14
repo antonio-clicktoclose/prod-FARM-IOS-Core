@@ -83,7 +83,10 @@ export async function buildSpotlightPlan(pool: Pool, runAt: Date) {
     const draft = { policyVersion: 2, format: 'reel_spotlight', nativeText: true, musicStyle: 'music_only', sourceReelId: reel.id, frames };
     const review = reviewStoryDraft(draft);
     if (!review.valid) throw Error('Spotlight plan failed review: ' + review.errors.join(' '));
-    return new StorySequenceStore(pool).save({ requestId: `spotlight-${runAt.toISOString().replace(/[:.]/g, '-')}`, title: 'Spotlight: ' + texts[0]!.slice(0, 120),
+    // A cancelled plan keeps its request ID, so a rebuild for the same slot gets the next build number.
+    const base = `spotlight-${runAt.toISOString().replace(/[:.]/g, '-')}`;
+    const builds = Number((await pool.query(`SELECT count(*) n FROM scheduler.story_sequences WHERE request_id LIKE $1`, [base + '%'])).rows[0].n);
+    return new StorySequenceStore(pool).save({ requestId: builds ? `${base}-${builds + 1}` : base, title: 'Spotlight: ' + texts[0]!.slice(0, 120),
         deviceUdid: PHONE, account: 'antoniorevenue', facebookAccount: '61584693917444', runAt: runAt.toISOString(), draft });
 }
 
