@@ -10,14 +10,14 @@ import os from 'node:os';
 import path from 'node:path';
 import sharp, { type OverlayOptions } from 'sharp';
 
-export interface PoolPhoto { file: string; sha256: string; faceTop?: number | null }
+export interface PoolPhoto { file: string; sha256: string; faceTop?: number | null; t?: number }
 /** Under a proof card at the top, only photos with the face low (or not visible) keep the face clear. */
 export const cardSafe = (p: PoolPhoto) => p.faceTop == null || p.faceTop > 0.5;
 const W = 1080, H = 1920, IMAGE = /\.(jpe?g|png|heic)$/i;
 
 export function loadPhotoPool(file = 'docs/stories/photo-pool.json'): PoolPhoto[] {
-    const pool = JSON.parse(readFileSync(file, 'utf8')) as { autoApprovedFolder?: string; photos: PoolPhoto[] };
-    const photos = pool.photos.filter(p => existsSync(p.file));
+    const pool = JSON.parse(readFileSync(file, 'utf8')) as { autoApprovedFolder?: string; photos: PoolPhoto[]; videoStills?: PoolPhoto[] };
+    const photos = [...pool.photos, ...(pool.videoStills ?? [])].filter(p => existsSync(p.file));
     const folder = pool.autoApprovedFolder;
     if (folder && existsSync(folder))
         for (const name of readdirSync(folder).filter(n => IMAGE.test(n)).sort()) {
@@ -57,8 +57,9 @@ export function textOverlay(lines: string[], { top = 300, size = 58, red = -1 } 
     return Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">${pills}</svg>`);
 }
 
-/** HEIC goes through macOS sips; everything else straight to sharp. */
-async function photoBuffer(file: string): Promise<Buffer> {
+/** Video stills: the full-resolution frame at t seconds. HEIC goes through macOS sips; everything else straight to sharp. */
+async function photoBuffer(file: string, t?: number): Promise<Buffer> {
+    if (t !== undefined) return execFileSync('ffmpeg', ['-v', 'error', '-ss', t.toFixed(2), '-i', file, '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'mjpeg', '-q:v', '2', '-'], { maxBuffer: 128 << 20 });
     if (!/\.heic$/i.test(file)) return readFile(file);
     const dir = await mkdtemp(path.join(os.tmpdir(), 'story-heic-'));
     try { const out = path.join(dir, 'p.jpg'); execFileSync('sips', ['-s', 'format', 'jpeg', file, '--out', out], { stdio: 'ignore' }); return await readFile(out); }
@@ -82,7 +83,7 @@ function arrow(textTop: number, cardBottom: number): string {
  * proof card at the top with a red arrow, and the text pills. Frames without a card put the text near the top. */
 export async function lifestyleFrame(source: PoolPhoto | Buffer, text: string, { red = false, card }: { red?: boolean; card?: ProofCard } = {}): Promise<Buffer> {
     const lines = wrapLines(text);
-    const raw = Buffer.isBuffer(source) ? source : await photoBuffer(source.file);
+    const raw = Buffer.isBuffer(source) ? source : await photoBuffer(source.file, source.t);
     const bg = await sharp(raw, { failOn: 'none' }).rotate().resize(W, H, { fit: 'cover', position: 'attention' })
         .modulate({ saturation: 1.18, brightness: 1.12 }).linear(1.04, 6).toBuffer();
     const layers: OverlayOptions[] = [];
