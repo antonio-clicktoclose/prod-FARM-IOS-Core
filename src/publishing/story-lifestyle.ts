@@ -110,3 +110,44 @@ export function lifestyleTexts(spotlight: string[], fallbacks: readonly string[]
     const keyword = cta.match(/^Comment (\S+) /)?.[1];
     return [...picked, keyword ? `Comment ${keyword} on this reel` : 'The full reel is next'];
 }
+
+/** Quality gate before a picture is used: enough pixels for a full-screen Story, sharp (variance of a Laplacian on a
+ * 512 px copy) and not too dark or blown out. */
+export async function imageQuality(raw: Buffer): Promise<{ ok: boolean; sharpness: number; brightness: number; width: number; height: number }> {
+    const img = sharp(raw, { failOn: 'none' }).rotate(), meta = await img.metadata();
+    const width = meta.autoOrient?.width ?? meta.width ?? 0, height = meta.autoOrient?.height ?? meta.height ?? 0;
+    const grey = await img.clone().resize(512, 512, { fit: 'inside' }).greyscale().raw().toBuffer({ resolveWithObject: true });
+    const { data, info } = grey, w = info.width, h = info.height;
+    let sum = 0, sum2 = 0, n = 0, lum = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x, v = 4 * data[i]! - data[i - 1]! - data[i + 1]! - data[i - w]! - data[i + w]!;
+        sum += v; sum2 += v * v; n++; lum += data[i]!;
+    }
+    const sharpness = sum2 / n - (sum / n) ** 2, brightness = lum / n;
+    const ok = Math.min(width, height) >= 1080 && sharpness >= 60 && brightness >= 45 && brightness <= 215;
+    return { ok, sharpness: Math.round(sharpness), brightness: Math.round(brightness), width, height };
+}
+
+/** Clean, minimal frame (Antonio, Oct 15: "the edit has to be clean, minimal"): the full-color picture, at most two lines
+ * of white text with a soft shadow in the lower third, and for proof frames the real dashboard screenshot with rounded
+ * corners and a soft shadow near the top. No pills, arrows or marker strokes. */
+export async function minimalFrame(source: PoolPhoto | Buffer, text: string, { card }: { card?: ProofCard } = {}): Promise<Buffer> {
+    const raw = Buffer.isBuffer(source) ? source : await photoBuffer(source.file, source.t);
+    const bg = await sharp(raw, { failOn: 'none' }).rotate().resize(W, H, { fit: 'cover', position: 'attention' })
+        .modulate({ saturation: 1.1, brightness: 1.06 }).toBuffer();
+    const layers: OverlayOptions[] = [];
+    if (card) {
+        const img = await sharp(card.file).resize(940, 600, { fit: 'inside' }).png().toBuffer(), m = await sharp(img).metadata();
+        const r = 22, mask = Buffer.from(`<svg width="${m.width}" height="${m.height}"><rect width="${m.width}" height="${m.height}" rx="${r}" fill="#fff"/></svg>`);
+        const rounded = await sharp(img).composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+        const pad = 60, shadow = await sharp({ create: { width: m.width! + pad * 2, height: m.height! + pad * 2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+            .composite([{ input: Buffer.from(`<svg width="${m.width! + pad * 2}" height="${m.height! + pad * 2}"><rect x="${pad}" y="${pad + 14}" width="${m.width}" height="${m.height}" rx="${r}" fill="#000" opacity="0.45"/></svg>`) }]).blur(24).png().toBuffer();
+        const left = Math.round((W - m.width!) / 2), top = 260;
+        layers.push({ input: shadow, left: left - pad, top: top - pad }, { input: rounded, left, top });
+    }
+    const lines = wrapLines(text, 28).slice(0, 2), size = 58, base = H - 520;
+    const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><filter id="s" x="-20%" y="-50%" width="140%" height="200%"><feDropShadow dx="0" dy="3" stdDeviation="9" flood-color="#000" flood-opacity="0.55"/></filter></defs>`
+        + lines.map((l, i) => `<text x="${W / 2}" y="${base + i * size * 1.22}" font-family="SF Pro Display, Helvetica Neue, Helvetica, Arial" font-weight="600" font-size="${size}" text-anchor="middle" fill="#fff" filter="url(#s)">${esc(l)}</text>`).join('') + '</svg>';
+    layers.push({ input: Buffer.from(svg) });
+    return sharp(bg).composite(layers).removeAlpha().png().toBuffer();
+}
