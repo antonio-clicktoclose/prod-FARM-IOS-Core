@@ -67,3 +67,11 @@ How it runs (local worker, no Claude):
 iOS 27 driver facts: with a Story live, the tray add badge is `story-tray-add-button`; Select album keeps its sideways scroll, so albums are found by the picker's Search with the exact PF- name; after Share, "Also share to" is closed with Done only.
 
 Oct 13 results: 17:00 pilot posted frame 1 on Instagram and stopped (Facebook receipt rule, since fixed). No-Share rehearsal with a Story live: 5 frames in 547 s. The worker then built, captured and armed the Oct 14 09:00 spotlight by itself.
+
+## Oct 15, 2026: weekly lifestyle sequences
+
+- The worker builds a lifestyle plan for every 8:00 AM and 4:00 PM slot up to 7 days ahead (`src/publishing/story-lifestyle.ts`). No model runs.
+- Photos come from `docs/stories/photo-pool.json` (284) and the Dropbox folder `C2C/B-Roll/Stories`. Proof cards come from `docs/stories/proof-cards.json`.
+- Frame 5 carries a native link sticker to the Reel. Readback must find exactly one sticker.
+- Check the week: `node --env-file-if-exists=.env --import tsx .scheduler-data/diag/week-state.ts`.
+- If a capture fails with "Capture all five actual native drafts", compare revisions with `.scheduler-data/diag/rev-check.ts <sequence id>`. Fixed in `1833da0` (undefined keys in the revision hash).
