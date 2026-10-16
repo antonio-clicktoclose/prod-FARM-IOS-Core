@@ -80,7 +80,7 @@ export async function runDirectStories(pool:Pool,signal:AbortSignal){
  // An approval belongs to the code that captured it. Fail loudly instead of leaving the job armed forever.
  await pool.query(`UPDATE scheduler.mirroring_story_jobs SET state='needs_review',result=result||'{"error":"Story code changed after approval. Capture and approve the drafts again."}'::jsonb
   WHERE state='armed' AND fingerprint<>$1 AND sequence_id IN(SELECT id FROM scheduler.story_sequences WHERE run_at<=now())`,[s.fingerprint]);
- if(await storyBlockedByVideo(pool,15))return;
+ if(await storyBlockedByVideo(pool,30))return;
  await store.tick(s.fingerprint,row=>driver(pool,row,signal,path.resolve('.scheduler-data/publishing/wda-story-runs',row.id)),!s.qualified,'stories_wda');
  await ensureSpotlightPlans(pool);
  await captureNextDraft(pool);

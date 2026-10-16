@@ -104,6 +104,9 @@ export class WdaStoryDriver extends InstagramRelease {
 
     /** Builds one frame and stops on the share options sheet. Never taps Share. Returns the native editor preview. */
     async prepareFrame(frame: NativeStoryFrame, label: string, reimported = false): Promise<{ previewPath: string; previewSha256: string }> {
+        // The once-only guard is per frame. One driver builds all five frames; the caller's per-frame claim is what
+        // stops a repeat (Oct 14 and 15: frames 2 to 5 never shared because this flag stayed set from frame 1).
+        if (!reimported) this.beginFrame();
         try { return await this.buildFrame(frame, label); }
         catch (error) {
             // Oct 13: a Story photo's PF- album vanished from the phone after its import was recorded. Only after the
@@ -243,6 +246,8 @@ export class WdaStoryDriver extends InstagramRelease {
         this.sheetReady = true;
     }
 
+    beginFrame() { this.sheetReady = false; this.shareAttempted = false; }
+
     /** Exactly one tap on the sheet's Share. The caller claims the frame first and never calls this twice. */
     private async shareStoryOnce() {
         if (!this.sheetReady || this.shareAttempted) throw new Error('Story Share is not ready or was already attempted');
@@ -264,7 +269,7 @@ export class WdaStoryDriver extends InstagramRelease {
             // Oct 13: the Page /stories edge never lists Stories cross-posted from Instagram (the Facebook app showed the
             // Antonio Revenue Story ring while Graph returned none). Once Instagram has exactly one new Story, the
             // Facebook receipt is the share sheet that proved "Your story, And Facebook story" right before the Share.
-            if (ig && Date.now() - sharedAt > 90_000) break;
+            if (ig && Date.now() - sharedAt > 30_000) break;
             if (Date.now() >= deadline) throw new Error(`Story receipt missing after one Share: Instagram ${ig ? 'found' : 'missing'}, Facebook ${fb ? 'found' : 'missing'}. Inspect; never share again`);
         }
         const instagram = { verified: true as const, source: 'instagram_graph' as const, id: ig.id, createdAt: new Date(ig.createdAt).toISOString(), url: ig.url };

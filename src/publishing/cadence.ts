@@ -6,7 +6,9 @@ export const publishingCadence = {
     videoCron: '22 0-23/2 * * *', videoIntervalMinutes: 120,
     platforms: ['instagram', 'facebook', 'youtube', 'tiktok'],
     videosPerDayPerPlatform: 12, tiktokDailyLimit: 24,
-    storyCron: '0 9,17 * * *', storyTimes: ['09:00', '17:00'],
+    // Stories at 08:00 and 16:00 (Oct 15): Instagram posts at 09:00 and 17:00 now, so the old Story slots collided.
+    // Each new slot has only the 07:00 or 15:00 Instagram post before it and a clear 45 minutes before the next video.
+    storyCron: '0 8,16 * * *', storyTimes: ['08:00', '16:00'],
     storySequencesPerDay: 2, planningDays: 3,
     missedSlotPolicy: 'review_before_rescheduling',
     // Antonio, Oct 15 19:15 PT: 8 Instagram Trial Reels a day (each with its linked Facebook post), 4 TikToks and

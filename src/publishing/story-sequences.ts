@@ -10,7 +10,7 @@ export function validateStoryPlan(value: any) {
     if (value.account !== 'antoniorevenue' || value.facebookAccount !== '61584693917444') throw new Error('Use the reviewed Instagram and Facebook accounts');
     if (!Number.isFinite(Date.parse(value.runAt))) throw new Error('A valid target time is required');
     const parts = new Intl.DateTimeFormat('en-US', {timeZone:'America/Los_Angeles',hourCycle:'h23',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date(value.runAt));
-    if (!(publishingCadence.storyTimes as readonly string[]).includes(parts.slice(0,5)) || !parts.endsWith(':00') || new Date(value.runAt).getMilliseconds()) throw new Error('Story plans use 09:00 or 17:00 Los Angeles time');
+    if (!(publishingCadence.storyTimes as readonly string[]).includes(parts.slice(0,5)) || !parts.endsWith(':00') || new Date(value.runAt).getMilliseconds()) throw new Error(`Story plans use ${publishingCadence.storyTimes.join(' or ')} Los Angeles time`);
     if (!Array.isArray(value.draft?.frames) || value.draft.frames.length !== 5) throw new Error('Include five Story frames');
     return {requestId:value.requestId,title:value.title.trim(),deviceUdid:value.deviceUdid,account:value.account,
         facebookAccount:value.facebookAccount,runAt:new Date(value.runAt).toISOString(),draft:value.draft};

@@ -103,7 +103,7 @@ export class NativeStoryStore {
             const c=await this.pool.connect();let locked=false;let driver:StoryFrameDriver|undefined;
             try{
                 locked=(await c.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) locked',[row.device_udid])).rows[0].locked;if(!locked)continue;
-                if(new Date(row.run_at).getTime()<Date.now()-10*60_000)throw new Error('Story slot missed. Review a new time');
+                if(new Date(row.run_at).getTime()<Date.now()-30*60_000)throw new Error('Story slot missed. Review a new time');
                 if(await nativeStoryRevision(row.draft,row.native_frames)!==row.revision)throw new Error('Approved Story assets changed');
                 const reserved=await c.query("UPDATE scheduler.mirroring_story_jobs SET state='running' WHERE id=$1 AND state='armed' RETURNING id",[row.id]);if(reserved.rowCount!==1)continue;
                 driver=await driverFor(row);

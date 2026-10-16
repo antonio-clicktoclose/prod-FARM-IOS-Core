@@ -1,14 +1,14 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {validateStoryPlan} from '../src/publishing/story-sequences.js';
-const plan=()=>({requestId:'story-review-example',title:'Review',deviceUdid:'00008130-000229EE1AA0001C',account:'antoniorevenue',facebookAccount:'61584693917444',runAt:'2026-10-03T16:00:00Z',draft:{frames:[{},{},{},{},{}]}});
+const plan=()=>({requestId:'story-review-example',title:'Review',deviceUdid:'00008130-000229EE1AA0001C',account:'antoniorevenue',facebookAccount:'61584693917444',runAt:'2026-10-03T15:00:00Z',draft:{frames:[{},{},{},{},{}]}});
 test('Story target follows Pacific time across DST',()=>{
-    assert.equal(validateStoryPlan(plan()).runAt,'2026-10-03T16:00:00.000Z');
-    assert.throws(()=>validateStoryPlan({...plan(),runAt:'2026-11-03T16:00:00Z'}),/09:00/);
-    assert.equal(validateStoryPlan({...plan(),runAt:'2026-11-03T17:00:00Z'}).runAt,'2026-11-03T17:00:00.000Z');
-    assert.equal(validateStoryPlan({...plan(),runAt:'2026-10-04T00:00:00Z'}).runAt,'2026-10-04T00:00:00.000Z');
-    assert.equal(validateStoryPlan({...plan(),runAt:'2026-11-04T01:00:00Z'}).runAt,'2026-11-04T01:00:00.000Z');
-    assert.throws(()=>validateStoryPlan({...plan(),runAt:'2026-10-04T00:00:01Z'}),/09:00 or 17:00/);
+    assert.equal(validateStoryPlan(plan()).runAt,'2026-10-03T15:00:00.000Z');
+    assert.throws(()=>validateStoryPlan({...plan(),runAt:'2026-11-03T15:00:00Z'}),/08:00/);
+    assert.equal(validateStoryPlan({...plan(),runAt:'2026-11-03T16:00:00Z'}).runAt,'2026-11-03T16:00:00.000Z');
+    assert.equal(validateStoryPlan({...plan(),runAt:'2026-10-03T23:00:00Z'}).runAt,'2026-10-03T23:00:00.000Z');
+    assert.equal(validateStoryPlan({...plan(),runAt:'2026-11-04T00:00:00Z'}).runAt,'2026-11-04T00:00:00.000Z');
+    assert.throws(()=>validateStoryPlan({...plan(),runAt:'2026-10-03T16:00:00Z'}),/08:00 or 16:00/);
 });
 test('caller cannot grant approval or change destination through plan fields',()=>{
     assert.equal((validateStoryPlan({...plan(),approved:true,state:'armed'}) as any).approved,undefined);

@@ -96,3 +96,24 @@ test('a Facebook cross-post receipt counts only with a verified Instagram Graph 
     assert.equal(storyFrameVerified({ instagram: { verified: false, source: 'instagram_graph' }, facebook: fb }), false);
     assert.equal(storyFrameVerified({ instagram: { verified: true, source: 'instagram_graph' }, facebook: { verified: false, source: 'facebook_crosspost' } }), false);
 });
+
+test('the Story tray add badge is found with a Story already live', async () => {
+    const { storyAddBadgePoint } = await import('../src/publishing/wda-story-driver.js');
+    const xml = '<XCUIElementTypeCell type="XCUIElementTypeCell" name="story-tray-cell-self" label="Button, Your story, Seen" visible="true" x="0" y="112" width="105" height="111">'
+        + '<XCUIElementTypeOther type="XCUIElementTypeOther" name="story-ring" visible="true" x="6" y="112" width="93" height="93"/>'
+        + '<XCUIElementTypeButton type="XCUIElementTypeButton" name="story-tray-add-button" label="Add to your story" visible="true" x="68" y="174" width="25" height="25"/></XCUIElementTypeCell>';
+    assert.deepEqual(storyAddBadgePoint(xml), { x: 81, y: 187 });
+});
+
+test('each Story frame gets exactly one Share, and a second tap on the same frame is refused', async () => {
+    const { WdaStoryDriver } = await import('../src/publishing/wda-story-driver.js');
+    const taps: string[] = [];
+    const d: any = Object.create(WdaStoryDriver.prototype);
+    Object.assign(d, { session: '/session/x', waitFor: async () => 'share-id', assertInputApp: async () => undefined,
+        raw: async (route: string) => { taps.push(route); return { ok: true, body: { value: null } }; } });
+    for (let frame = 1; frame <= 3; frame++) { d.beginFrame(); d.sheetReady = true; await d.shareStoryOnce(); }
+    assert.equal(taps.length, 3);
+    d.sheetReady = true;
+    await assert.rejects(d.shareStoryOnce(), /already attempted/);
+    assert.equal(taps.length, 3);
+});
