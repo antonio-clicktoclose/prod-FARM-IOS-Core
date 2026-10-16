@@ -8,6 +8,7 @@ import {execFileSync} from 'node:child_process';
 import {existsSync,mkdirSync,writeFileSync} from 'node:fs';
 import {createDatabaseConnection} from '../src/database/client.js';
 import {publishingCadence as cadence,slotsFrom} from '../src/publishing/cadence.js';
+import {laneHours} from '../src/publishing/lanes.js';
 import {normalizeText} from '../src/publishing/meta-receipts.js';
 import {TimedReleaseStore} from '../src/publishing/timed-release.js';
 
@@ -30,7 +31,7 @@ try{
    WHERE i.input->'targets' @> '[{"platform":"instagram"}]'`)).rows;
  const live=ig.filter(r=>r.state&&r.state!=='cancelled');
  const taken=new Set(live.map(r=>Math.round(new Date(r.run_at).getTime()/hour)*hour));
- const free=slotsFrom(now+20*minute,cadence.instagramHours,Math.ceil(horizon/24)+1).filter(s=>s<now+horizon*hour&&!taken.has(s));
+ const free=slotsFrom(now+20*minute,laneHours().instagram,Math.ceil(horizon/24)+1).filter(s=>s<now+horizon*hour&&!taken.has(s));
  if(!free.length){console.log(JSON.stringify({freeSlots:0,reposted:0}));process.exit(0);}
  // Views for our recent Reels (read-only Graph insights).
  const s=graphToken();

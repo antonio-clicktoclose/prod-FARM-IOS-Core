@@ -6,13 +6,14 @@ import {readFile,writeFile} from 'node:fs/promises';
 import {Message,Blocks,Md} from 'slack-block-builder';
 import {createDatabaseConnection} from '../src/database/client.js';
 import {publishingCadence as cadence,slotsFrom} from '../src/publishing/cadence.js';
+import {laneHours} from '../src/publishing/lanes.js';
 import {sendAlert} from './lib/ops-notify.js';
 
 const dryRun=process.argv.includes('--dry-run'),statePath='.scheduler-data/slot-alerts.json',minute=60000;
 const pt=(ms:number)=>new Date(ms).toLocaleString('en-US',{timeZone:cadence.timezone,weekday:'short',hour:'numeric',minute:'2-digit'});
 const db=createDatabaseConnection();
 try{
- const now=Date.now(),lanes={instagram:cadence.instagramHours,tiktok:cadence.tiktokHours,youtube:cadence.youtubeHours} as const;
+ const now=Date.now(),lanes=laneHours();
  const sent:string[]=JSON.parse(await readFile(statePath,'utf8').catch(()=>'[]'));
  const misses:string[]=[];let checked=0;
  for(const [p,hours] of Object.entries(lanes)){

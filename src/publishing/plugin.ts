@@ -12,6 +12,8 @@ import { phoneControlMode } from '../devices/control-mode.js';
 import { mirroringStatus } from '../devices/mirroring/controller.js';
 import { phoneAudioStatus, recordOwnerSilenceCheck,verifiedPhoneMute } from '../devices/mirroring/audio.js';
 import { publishingCadence, upcomingVideoSlots } from './cadence.js';
+import { laneHours, saveLaneHours, postNow } from './lanes.js';
+import { execFile } from 'node:child_process';
 import { StoryScheduleStore } from './story-schedule.js';
 import { StorySequenceStore } from './story-sequences.js';
 import { prepareYouTubeCover } from './youtube-cover.js';
@@ -78,6 +80,26 @@ export function createPublishingPlugin(): PhoneFarmPlugin {
                 const direct=phoneControlMode()==='wda'?await directStoryStatus(ctx.scheduler.connection.pool):null;
                 const ready=direct?direct.qualified:a.foregroundAllowed&&control?.controlReady===true&&verifiedPhoneMute(audio)&&a.flows.stories.qualified;
                 return {...status,publicationEnabled:ready,unattendedPilotVerified:direct?.qualified??a.flows.stories.qualified,...(direct?{direct}:{}),blockers:ready?['Each exact native sequence still needs owner approval.']:['Native Story controls and a verified worker pilot are required.','Approve all five actual frames for each new sequence.']};
+            });
+            // Autopilot controls (Oct 15): lane hours and Post now. The hourly lane-slotter.ts owns every armed post's time.
+            ctx.app.get(`${base}/lanes`, async () => {
+                const upcoming=(await ctx.scheduler.connection.pool.query(`SELECT i.id,i.media->>'name' AS name,r.run_at,(i.results ? 'repost') AS repost,
+                  (SELECT array_agg(t->>'platform') FROM jsonb_array_elements(i.input->'targets') t) AS platforms
+                  FROM scheduler.publishing_releases r JOIN scheduler.publishing_items i ON i.id=r.item_id
+                  WHERE r.state='armed' AND r.share_claimed_at IS NULL AND r.run_at<now()+interval '48 hours' ORDER BY r.run_at`)).rows;
+                return {hours:laneHours(),upcoming};
+            });
+            ctx.app.post(`${base}/lanes`, async (req, reply) => {
+                try{
+                    const hours=saveLaneHours((req.body as any)?.hours);
+                    const root=fileURLToPath(new URL('../../',import.meta.url));
+                    const out=await new Promise<string>((ok)=>execFile(process.execPath,['--env-file-if-exists=.env','--import','tsx','scripts/lane-slotter.ts','--apply'],{cwd:root,timeout:120000},(e,so,se)=>ok(String(so||se||e?.message||'').trim().split('\n').pop()??'')));
+                    return {hours,slotter:out};
+                }catch(e){return reply.code(400).send({error:e instanceof Error?e.message:String(e)});}
+            });
+            ctx.app.post(`${base}/post-now`, async (req, reply) => {
+                try{return await postNow(ctx.scheduler.connection.pool,(req.body as any)?.itemId||undefined);}
+                catch(e){return reply.code(409).send({error:e instanceof Error?e.message:String(e)});}
             });
             ctx.app.get(`${base}/cadence`, async () => {
                 const status = await stories.status();

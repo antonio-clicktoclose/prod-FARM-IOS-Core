@@ -471,7 +471,7 @@ import {contentGroups} from './groups.mjs';
     function renderCaps() {
         const cadence = $('cadence');
         if (state.cadence) fill(cadence,
-            h('div', {class:'banner-main'}, h('strong', {text:`Video plan: every ${state.cadence.videoIntervalMinutes} minutes across all four platforms.`}), h('span', {text:`${state.cadence.videosPerDayPerPlatform} planned per platform daily. Stories at 9 a.m. and 5 p.m. Pacific.`})),
+            h('div', {class:'banner-main'}, h('strong', {text:'Video plan: set in the Autopilot panel above, one lane per platform.'}), h('span', {text:'Stories at 9 a.m. and 5 p.m. Pacific.'})),
             h('div', {class:'banner-note',text:state.cadence.runtime?.controlMode === 'mirroring'
                 ? `${state.cadence.runtime?.videoPostingRunning ? 'Verified video posting is running.' : state.cadence.runtime?.automaticPostingRequested ? 'Automatic schedule checks are on. Publishing is blocked.' : 'Automatic posting is paused.'} Keep the physical phone locked and the Mac awake and unlocked. ${state.cadence.runtime?.releaseWorker?.blockers?.join(' ') || state.cadence.mirroring?.reason || 'Checking the Mac controller.'} ${state.cadence.audio?.reason || 'Phone audio mute is not verified. Keep playback stopped.'}`
                 : state.cadence.runtime?.videoPostingRunning ? 'The video worker and native driver are running. Only armed content can publish. A Story posts only after you approve its five native previews.' : 'Video posting is paused. The release worker and native driver must be restored. A Story posts only after you approve its five native previews.'}));

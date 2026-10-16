@@ -63,6 +63,7 @@
             </div>
         </header>
 
+        <section id="autopilot" class="banner banner-neutral" aria-label="Autopilot">Loading autopilot…</section>
         <section id="cadence" class="banner banner-neutral" aria-live="polite">Loading cadence…</section>
         <section id="capabilities" class="banner banner-neutral" aria-live="polite">
             <div class="banner-main"><strong>Checking posting mode…</strong></div>
@@ -190,5 +191,40 @@
             <p id="form-message" class="form-message" role="status" aria-live="polite"></p>
         </form>
     </template>
+
+<script type="module">
+// Autopilot panel (Oct 15): Post now and lane hours. Talks to /api/publishing/lanes and /api/publishing/post-now.
+const API='/api/publishing',el=document.getElementById('autopilot');
+const LANES=[['instagram','Instagram Trial + Facebook'],['tiktok','TikTok'],['youtube','YouTube Shorts (+22 min)']];
+const fmt=(t)=>new Date(t).toLocaleString('en-US',{timeZone:'America/Los_Angeles',weekday:'short',hour:'numeric',minute:'2-digit'});
+const esc=(s)=>String(s).replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function call(url,body){const r=await fetch(url,body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j;}
+let note='';
+async function load(){
+  try{
+    const d=await call(API+'/lanes');
+    const byVideo=new Map();for(const u of d.upcoming){const k=u.name.replace(/^video-/,'');if(!byVideo.has(k))byVideo.set(k,{...u,platforms:[...u.platforms]});else byVideo.get(k).platforms.push(...u.platforms);}
+    const rows=[...byVideo.values()].slice(0,10).map(u=>`<li style="display:flex;gap:.6rem;align-items:center;margin:.2rem 0"><span style="min-width:7.5rem">${fmt(u.run_at)}</span><span style="flex:1">${esc(u.name)}${u.repost?' <em>(repost)</em>':''} · ${esc([...new Set(u.platforms)].join(', '))}</span><button class="btn btn-small" data-post="${u.id}">Post now</button></li>`).join('');
+    el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:center;justify-content:space-between"><strong>Autopilot</strong>
+      <button class="btn" id="ap-next">Post next video now</button></div>
+      <p style="margin:.4rem 0">${esc(note)}</p>
+      <form id="ap-hours" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(14rem,1fr));gap:.6rem;margin:.4rem 0">
+        ${LANES.map(([k,label])=>`<label>${label} hours (PT, 0–23)<br><input name="${k}" value="${d.hours[k].join(', ')}" style="width:100%"></label>`).join('')}
+        <div><button class="btn btn-small" type="submit">Save hours and reschedule</button><br><small>${d.hours.instagram.length} Instagram · ${d.hours.tiktok.length} TikTok · ${d.hours.youtube.length} Shorts a day</small></div>
+      </form>
+      <details><summary>Next ${Math.min(10,byVideo.size)} videos (48 h)</summary><ul style="list-style:none;padding:0">${rows||'<li>Nothing armed. The repost filler adds top older Reels to empty Instagram slots each hour.</li>'}</ul></details>`;
+    el.querySelector('#ap-next').onclick=()=>post();
+    el.querySelectorAll('[data-post]').forEach(b=>b.onclick=()=>post(b.dataset.post));
+    el.querySelector('#ap-hours').onsubmit=async(e)=>{e.preventDefault();const f=new FormData(e.target);
+      try{const hours=Object.fromEntries(LANES.map(([k])=>[k,String(f.get(k)).split(/[ ,]+/).filter(Boolean).map(Number)]));const r=await call(API+'/lanes',{hours});note='Saved. '+r.slotter;}catch(err){note='Not saved: '+err.message;}load();};
+  }catch(err){el.textContent='Autopilot unavailable: '+err.message;}
+}
+async function post(itemId){
+  if(!confirm(itemId?'Post this video now on its armed platforms?':'Post the next armed video now?'))return;
+  try{const r=await call(API+'/post-now',{itemId});note='Posting in about 2 minutes: '+r.moved.map(m=>m.name+' ('+m.platforms.join('+')+')').join(', ');}catch(err){note='Not moved: '+err.message;}
+  load();
+}
+load();setInterval(load,60000);
+</script>
 </body>
 </html>

@@ -6,10 +6,11 @@
 import {createDatabaseConnection} from '../src/database/client.js';
 import {requestHash,validatePostingInput} from '../src/publishing/model.js';
 import {publishingCadence as cadence,slotsFrom} from '../src/publishing/cadence.js';
+import {laneHours} from '../src/publishing/lanes.js';
 
 const apply=process.argv.includes('--apply'),phone='00008130-000229EE1AA0001C',minute=60000,hour=3600000;
 export const laneOf=(input:any)=>input.targets.some((x:any)=>x.platform==='youtube')?'youtube':input.targets.some((x:any)=>x.platform==='tiktok')?'tiktok':'instagram';
-const hoursOf={instagram:cadence.instagramHours,tiktok:cadence.tiktokHours,youtube:cadence.youtubeHours} as const;
+const hoursOf=laneHours();
 const db=createDatabaseConnection(),c=await db.pool.connect();const moves:any[]=[];
 try{
  await c.query('BEGIN');
