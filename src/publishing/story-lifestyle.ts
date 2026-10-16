@@ -12,7 +12,7 @@ import sharp, { type OverlayOptions } from 'sharp';
 
 export interface PoolPhoto { file: string; sha256: string; faceTop?: number | null; t?: number }
 /** Under a proof card at the top, only photos with the face low (or not visible) keep the face clear. */
-export const cardSafe = (p: PoolPhoto) => p.faceTop == null || p.faceTop > 0.5;
+export const cardSafe = (p: PoolPhoto) => p.faceTop == null || p.faceTop > 0.6;
 const W = 1080, H = 1920, IMAGE = /\.(jpe?g|png|heic)$/i;
 
 export function loadPhotoPool(file = 'docs/stories/photo-pool.json'): PoolPhoto[] {
@@ -136,18 +136,31 @@ export async function minimalFrame(source: PoolPhoto | Buffer, text: string, { c
     const bg = await sharp(raw, { failOn: 'none' }).rotate().resize(W, H, { fit: 'cover', position: 'attention' })
         .modulate({ saturation: 1.1, brightness: 1.06 }).toBuffer();
     const layers: OverlayOptions[] = [];
+    let cardBottom = 0;
     if (card) {
         const img = await sharp(card.file).resize(940, 600, { fit: 'inside' }).png().toBuffer(), m = await sharp(img).metadata();
         const r = 22, mask = Buffer.from(`<svg width="${m.width}" height="${m.height}"><rect width="${m.width}" height="${m.height}" rx="${r}" fill="#fff"/></svg>`);
         const rounded = await sharp(img).composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
         const pad = 60, shadow = await sharp({ create: { width: m.width! + pad * 2, height: m.height! + pad * 2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
             .composite([{ input: Buffer.from(`<svg width="${m.width! + pad * 2}" height="${m.height! + pad * 2}"><rect x="${pad}" y="${pad + 14}" width="${m.width}" height="${m.height}" rx="${r}" fill="#000" opacity="0.45"/></svg>`) }]).blur(24).png().toBuffer();
-        const left = Math.round((W - m.width!) / 2), top = 260;
+        const left = Math.round((W - m.width!) / 2), top = 240;
         layers.push({ input: shadow, left: left - pad, top: top - pad }, { input: rounded, left, top });
+        cardBottom = top + m.height!;
     }
-    const lines = wrapLines(text, 28).slice(0, 2), size = 58, base = H - 520;
+    // Words sit right under the card on proof frames (as in the Highlights), and in the upper third otherwise.
+    const lines = wrapLines(text, 26).slice(0, 2), size = 60, base = cardBottom ? cardBottom + 190 : 380;
+    // One clean red arrow from beside the words up to the card's right edge.
+    const arrowSvg = cardBottom ? (() => {
+        // Curved arrow: tail beside the words, tip just under the card's right column (where the result is).
+        const tx = W - 210, ty = cardBottom + 18, sx = W - 95, sy = base - size * 0.35, cx = W - 70, cy = (ty + sy) / 2 - 20;
+        const dx = tx - cx, dy = ty - cy, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len, head = 46;
+        const wing = (deg: number) => { const r = deg * Math.PI / 180, c = Math.cos(r), sn = Math.sin(r);
+            return `L ${(tx - head * (ux * c - uy * sn)).toFixed(1)} ${(ty - head * (ux * sn + uy * c)).toFixed(1)}`; };
+        return `<g fill="none" stroke="#FF3B30" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" filter="url(#s)">`
+            + `<path d="M ${sx} ${sy} Q ${cx} ${cy} ${tx} ${ty}"/><path d="M ${tx} ${ty} ${wing(32)} M ${tx} ${ty} ${wing(-32)}"/></g>`;
+    })() : '';
     const svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg"><defs><filter id="s" x="-20%" y="-50%" width="140%" height="200%"><feDropShadow dx="0" dy="3" stdDeviation="9" flood-color="#000" flood-opacity="0.55"/></filter></defs>`
-        + lines.map((l, i) => `<text x="${W / 2}" y="${base + i * size * 1.22}" font-family="SF Pro Display, Helvetica Neue, Helvetica, Arial" font-weight="600" font-size="${size}" text-anchor="middle" fill="#fff" filter="url(#s)">${esc(l)}</text>`).join('') + '</svg>';
+        + arrowSvg + lines.map((l, i) => `<text x="${W / 2}" y="${base + i * size * 1.22}" font-family="SF Pro Display, Helvetica Neue, Helvetica, Arial" font-weight="700" font-size="${size}" text-anchor="middle" fill="#fff" filter="url(#s)">${esc(l)}</text>`).join('') + '</svg>';
     layers.push({ input: Buffer.from(svg) });
     return sharp(bg).composite(layers).removeAlpha().png().toBuffer();
 }
