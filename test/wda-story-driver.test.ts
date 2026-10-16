@@ -87,6 +87,8 @@ test('the Story gallery opens from the badge inside the own tray cell only',()=>
 test('a Story revision survives a jsonb key reorder', async () => {
     const { canonicalJson } = await import('../src/publishing/mirroring-stories.js');
     assert.equal(canonicalJson({ b: 1, a: [{ y: 2, x: null }] }), canonicalJson({ a: [{ x: null, y: 2 }], b: 1 }));
+    // jsonb drops undefined keys; the revision must survive that round trip.
+    assert.equal(canonicalJson({ a: 1, linkUrl: undefined }), canonicalJson(JSON.parse(JSON.stringify({ a: 1, linkUrl: undefined }))));
 });
 
 test('a Facebook cross-post receipt counts only with a verified Instagram Graph receipt', async () => {

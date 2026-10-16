@@ -38,7 +38,7 @@ export async function captureDirectStoryDraft(pool:Pool,sequenceId:string,frames
  phone=row.device_udid;locked=(await c.query('SELECT pg_try_advisory_lock(hashtextextended($1,0)) locked',[phone])).rows[0].locked;if(!locked)throw Error('Phone busy');
  const fingerprint=await directStoryFingerprint();d=await driver(pool,row,AbortSignal.timeout(15*60000),path.resolve('.scheduler-data/publishing/wda-story-drafts',sequenceId+'-'+Date.now()));const captured=[];
  for(const [i,frame] of input.entries())captured.push(await d.captureDraftFrame(frame,'frame-'+(i+1)));
- const revision=await nativeStoryRevision(row.draft,captured);await c.query('INSERT INTO scheduler.mirroring_story_preview_sets(sequence_id,native_frames,revision,fingerprint) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING',[sequenceId,JSON.stringify(captured),revision,fingerprint]);
+ const revision=await nativeStoryRevision(row.draft,captured);await c.query('INSERT INTO scheduler.mirroring_story_preview_sets(sequence_id,native_frames,revision,fingerprint) VALUES($1,$2,$3,$4) ON CONFLICT(sequence_id) DO UPDATE SET native_frames=EXCLUDED.native_frames,revision=EXCLUDED.revision,fingerprint=EXCLUDED.fingerprint,checked_at=now()',[sequenceId,JSON.stringify(captured),revision,fingerprint]);
  const saved=await store.prepare(sequenceId,captured,fingerprint);return{id:saved.id,revision:saved.revision,state:saved.state,shareAttempted:false,previewUrls:[1,2,3,4,5].map(n=>'/api/publishing/stories/native/'+saved.id+'/frames/'+n)};
  }finally{await d?.leaveVideo().catch(()=>{});if(locked)await c.query('SELECT pg_advisory_unlock(hashtextextended($1,0))',[phone]);c.release();}
 }

@@ -53,10 +53,11 @@ export async function nativeStoryRevision(draft:any,frames:NativeStoryFrame[]) {
     return createHash('sha256').update(canonicalJson({draft,frames})).digest('hex');
 }
 /** Postgres jsonb reorders object keys, so a revision must not depend on key order (Oct 13: the first WDA capture
- * failed its own check after a jsonb round trip). */
+ * failed its own check after a jsonb round trip). jsonb also drops undefined keys, so they are skipped here
+ * (Oct 15: frames 1 to 4 carried linkUrl: undefined and every lifestyle capture failed its own check). */
 export function canonicalJson(value:unknown):string{
     if(Array.isArray(value))return '['+value.map(canonicalJson).join(',')+']';
-    if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonicalJson((value as any)[k])).join(',')+'}';
+    if(value&&typeof value==='object')return '{'+Object.keys(value).filter(k=>(value as any)[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+canonicalJson((value as any)[k])).join(',')+'}';
     return JSON.stringify(value)??'null';
 }
 export class NativeStoryStore {
