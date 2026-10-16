@@ -8,13 +8,14 @@ import {requestHash,validatePostingInput} from '../src/publishing/model.js';
 import {publishingCadence as cadence,slotsFrom} from '../src/publishing/cadence.js';
 import {laneHours} from '../src/publishing/lanes.js';
 
-const apply=process.argv.includes('--apply'),phone='00008130-000229EE1AA0001C',minute=60000,hour=3600000;
+const apply=process.argv.includes('--apply'),minute=60000,hour=3600000;
 export const laneOf=(input:any)=>input.targets.some((x:any)=>x.platform==='youtube')?'youtube':input.targets.some((x:any)=>x.platform==='tiktok')?'tiktok':'instagram';
 const hoursOf=laneHours();
 const db=createDatabaseConnection(),c=await db.pool.connect();const moves:any[]=[];
 try{
  await c.query('BEGIN');
- if(!(await c.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1,0)) l',[phone])).rows[0].l)throw Error('Phone busy; the next hourly run retries');
+ // No phone lock (Oct 15 20:05: a busy phone made the hourly run skip). Row locks below serialize with the worker,
+ // and only armed posts with no Share claim, due 10+ minutes out, ever move.
  const rows=(await c.query(`SELECT i.*,r.run_at,r.state,r.share_claimed_at FROM scheduler.publishing_items i JOIN scheduler.publishing_releases r ON r.item_id=i.id
    WHERE r.state<>'cancelled' FOR UPDATE OF i,r`)).rows;
  const now=Date.now(),t=(r:any)=>new Date(r.run_at).getTime();

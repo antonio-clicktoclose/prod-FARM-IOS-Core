@@ -11,6 +11,7 @@ import {publishingCadence as cadence,slotsFrom} from '../src/publishing/cadence.
 import {laneHours} from '../src/publishing/lanes.js';
 import {normalizeText} from '../src/publishing/meta-receipts.js';
 import {TimedReleaseStore} from '../src/publishing/timed-release.js';
+import {DirectMediaStore} from '../src/publishing/direct-media.js';
 
 const apply=process.argv.includes('--apply'),day=86400000,hour=3600000,minute=60000;
 const minViews=500;   // "performed well": at least 500 Instagram views
@@ -68,6 +69,10 @@ try{
     const d=existing??cli('prepare','--input',path,'--video',c.item.media.path);
     await db.pool.query(`UPDATE scheduler.publishing_items SET results=results||jsonb_build_object('repost',jsonb_build_object('of',$2::text,'url',$3::text,'views',$4::int,'approvedBy','Antonio, chat 2026-10-15')),updated_at=now() WHERE id=$1 AND status='held'`,[d.id,c.item.id,c.url,c.views]);
     const back=cli('get',d.id);
+    // Oct 15 21:00: the first repost failed with "Exact Instagram album is missing": the phone album from the original
+    // post (Oct 8) was gone but the import journal still said imported. A finished import is forgotten so the post
+    // imports a fresh copy; an uncertain import is never forgotten (forgetMissingAlbum only removes state 'imported').
+    await new DirectMediaStore(db.pool).forgetMissingAlbum(o.deviceUdid,c.item.media.sha256);
     await new TimedReleaseStore(db.pool).arm(d.id,back.version);
     const st=(await db.pool.query('SELECT state,run_at FROM scheduler.publishing_releases WHERE item_id=$1',[d.id])).rows[0];
     out.push({id:d.id,name:c.item.media.name,slot:pt(slot),state:st?.state});
