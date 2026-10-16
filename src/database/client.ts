@@ -17,6 +17,12 @@ export function databaseUrl(): string {
 
 export function createDatabaseConnection(connectionString = databaseUrl()): DatabaseConnection {
     const pool = new Pool({ connectionString, max: Number(process.env.DATABASE_POOL_SIZE ?? 10) });
+    // Oct 13 02:00 and Oct 15 20:11: the Supabase pooler dropped a connection ("Connection terminated unexpectedly").
+    // With no listener, pg re-throws the client's 'error' event and the whole worker crashed mid-post. Log it instead:
+    // the query in flight still rejects and its own handler records the failure; the pool replaces the client.
+    const logDropped = (error: Error) => console.error(new Date().toISOString(), 'database connection dropped:', error.message);
+    pool.on('error', logDropped);
+    pool.on('connect', (client) => client.on('error', logDropped));
     return {
         pool,
         db: drizzle(pool, { schema }),
