@@ -8,9 +8,11 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions } from 'sharp';
 
-export interface PoolPhoto { file: string; sha256: string }
+export interface PoolPhoto { file: string; sha256: string; faceTop?: number | null }
+/** Under a proof card at the top, only photos with the face low (or not visible) keep the face clear. */
+export const cardSafe = (p: PoolPhoto) => p.faceTop == null || p.faceTop > 0.5;
 const W = 1080, H = 1920, IMAGE = /\.(jpe?g|png|heic)$/i;
 
 export function loadPhotoPool(file = 'docs/stories/photo-pool.json'): PoolPhoto[] {
@@ -33,7 +35,7 @@ export function pickPhotos(pool: PoolPhoto[], lastUsed: ReadonlyMap<string, numb
 }
 
 /** Greedy wrap to about `max` characters per line. */
-export function wrapLines(text: string, max = 24): string[] {
+export function wrapLines(text: string, max = 26): string[] {
     const lines: string[] = [];
     for (const word of text.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '').split(/\s+/).filter(Boolean)) {
         const last = lines[lines.length - 1];
@@ -63,12 +65,39 @@ async function photoBuffer(file: string): Promise<Buffer> {
     finally { await rm(dir, { recursive: true, force: true }); }
 }
 
-/** One full-color 1080x1920 frame: the photo (EXIF-rotated, cover crop, a touch more saturation) plus the text pills. */
-export async function lifestyleFrame(photo: PoolPhoto, text: string, red = false): Promise<Buffer> {
+export interface ProofCard { file: string; headline: string; source: string }
+export function loadProofCards(file = 'docs/stories/proof-cards.json'): ProofCard[] {
+    return (JSON.parse(readFileSync(file, 'utf8')) as { cards: ProofCard[] }).cards.filter(c => existsSync(c.file));
+}
+
+/** A big red hand-drawn arrow from beside the headline up to the proof card (as in the Highlights). */
+function arrow(textTop: number, cardBottom: number): string {
+    const x0 = 150, y0 = textTop - 20, x1 = 230, y1 = cardBottom + 10;
+    return `<g stroke="#E8231F" stroke-width="14" stroke-linecap="round" fill="none">`
+        + `<path d="M ${x0} ${y0} C ${x0 - 70} ${y0 - 70}, ${x1 - 120} ${y1 + 60}, ${x1} ${y1}"/>`
+        + `<path d="M ${x1} ${y1} l -58 4 M ${x1} ${y1} l -18 52"/></g>`;
+}
+
+/** One bright, full-color 1080x1920 frame: the photo (EXIF-rotated, cover crop, lifted exposure and saturation), an optional
+ * proof card at the top with a red arrow, and the text pills. Frames without a card put the text near the top. */
+export async function lifestyleFrame(source: PoolPhoto | Buffer, text: string, { red = false, card }: { red?: boolean; card?: ProofCard } = {}): Promise<Buffer> {
     const lines = wrapLines(text);
-    const bg = await sharp(await photoBuffer(photo.file), { failOn: 'none' }).rotate().resize(W, H, { fit: 'cover', position: 'attention' })
-        .modulate({ saturation: 1.12, brightness: 1.02 }).toBuffer();
-    return sharp(bg).composite([{ input: textOverlay(lines, { red: red ? lines.length - 1 : -1 }) }]).removeAlpha().png().toBuffer();
+    const raw = Buffer.isBuffer(source) ? source : await photoBuffer(source.file);
+    const bg = await sharp(raw, { failOn: 'none' }).rotate().resize(W, H, { fit: 'cover', position: 'attention' })
+        .modulate({ saturation: 1.18, brightness: 1.12 }).linear(1.04, 6).toBuffer();
+    const layers: OverlayOptions[] = [];
+    let textTop = 300;
+    if (card) {
+        const img = await sharp(card.file).resize(960, 620, { fit: 'inside' }).png().toBuffer(), meta = await sharp(img).metadata();
+        const framed = await sharp({ create: { width: meta.width! + 24, height: meta.height! + 24, channels: 4, background: '#ffffff' } })
+            .composite([{ input: img, left: 12, top: 12 }]).png().toBuffer();
+        layers.push({ input: framed, left: Math.round((W - meta.width! - 24) / 2), top: 190 });
+        const cardBottom = 190 + meta.height! + 24;
+        textTop = cardBottom + 230;
+        layers.push({ input: Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">${arrow(textTop, cardBottom)}</svg>`) });
+    }
+    layers.push({ input: textOverlay(lines, { top: textTop, red: red || card ? lines.length - 1 : -1 }) });
+    return sharp(bg).composite(layers).removeAlpha().png().toBuffer();
 }
 
 /** Frame texts from the Reel caption: up to three short caption sentences (three lines max each), then the keyword CTA. */

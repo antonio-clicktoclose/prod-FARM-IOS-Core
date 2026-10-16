@@ -4,307 +4,383 @@
  "photos": [
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/0716988a-51df-478a-9e25-e4b3219e0576 (1).png",
-   "sha256": "4e071259e31b26eb503e723afbf276a359e6de07158ebe7015e583aeb1bc452f"
+   "sha256": "4e071259e31b26eb503e723afbf276a359e6de07158ebe7015e583aeb1bc452f",
+   "faceTop": 0.475
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/IMG_0133 (1).HEIC",
-   "sha256": "f40812881652da692fc1188ebbc322f890f24eba0ca8adc5f8fc943c94dde4e8"
+   "sha256": "f40812881652da692fc1188ebbc322f890f24eba0ca8adc5f8fc943c94dde4e8",
+   "faceTop": 0.549
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/IMG_3962 (1).HEIC",
-   "sha256": "7b593bf4e006bfb1ad058b9fca8e4a8cf9517e2f49bf787ed020e20f86d96cc4"
+   "sha256": "7b593bf4e006bfb1ad058b9fca8e4a8cf9517e2f49bf787ed020e20f86d96cc4",
+   "faceTop": 0.374
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/IMG_4249.HEIC",
-   "sha256": "25a552a57a4b7e72d0054776875d0b199d1bbd186e5c816bf3b16fe90e1f14cd"
+   "sha256": "25a552a57a4b7e72d0054776875d0b199d1bbd186e5c816bf3b16fe90e1f14cd",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/IMG_4253.HEIC",
-   "sha256": "457c6516f17af27f66132d55a1cb10b089212b0974b490879bbbab0af3623108"
+   "sha256": "457c6516f17af27f66132d55a1cb10b089212b0974b490879bbbab0af3623108",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/IMG_4279.heic",
-   "sha256": "fa8128b362a72a15219752581299ee52a731a869df6b752c09621b57391723a1"
+   "sha256": "fa8128b362a72a15219752581299ee52a731a869df6b752c09621b57391723a1",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/IMG_4282.HEIC",
-   "sha256": "aaae6275ad9bfed50648adcc74ea523147920bf093d1b1089504f055ab964223"
+   "sha256": "aaae6275ad9bfed50648adcc74ea523147920bf093d1b1089504f055ab964223",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Aug 12 2021, 7 37 20 PM.jpg",
-   "sha256": "dcd2c0d2c66c60182f541175f463424615c5847abfdf1712396b2619ed85fcde"
+   "sha256": "dcd2c0d2c66c60182f541175f463424615c5847abfdf1712396b2619ed85fcde",
+   "faceTop": 0.539
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Aug 16 2021, 7 25 35 PM.jpg",
-   "sha256": "1cf51f1ea58fac096e03d9c0446be650846c3fd7664d35e48a56c1a41fceb379"
+   "sha256": "1cf51f1ea58fac096e03d9c0446be650846c3fd7664d35e48a56c1a41fceb379",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Aug 28 2021, 12 28 29 PM.jpg",
-   "sha256": "1ffb71015afdca122f849702e554d5f66ad5fa900243b4f9a3112e48482a4198"
+   "sha256": "1ffb71015afdca122f849702e554d5f66ad5fa900243b4f9a3112e48482a4198",
+   "faceTop": 0.338
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 08 2025, 4 41 07 PM.jpg",
-   "sha256": "d55d1bccfc4b43d686ad3f632f801f4b4c00478d2d203a7fd6095b833dbac506"
+   "sha256": "d55d1bccfc4b43d686ad3f632f801f4b4c00478d2d203a7fd6095b833dbac506",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 08 2025, 4 44 00 PM.jpg",
-   "sha256": "2b20870f66787ac0f3bc32744d854f480d2b0282a00192ef6cb3bcc3e2a61522"
+   "sha256": "2b20870f66787ac0f3bc32744d854f480d2b0282a00192ef6cb3bcc3e2a61522",
+   "faceTop": 0.502
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 19 2025, 1 22 58 PM.jpg",
-   "sha256": "d7725c69c74e8500c7acad57304710916b596711240cc7af37e7a39a80df94e3"
+   "sha256": "d7725c69c74e8500c7acad57304710916b596711240cc7af37e7a39a80df94e3",
+   "faceTop": 0.533
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 19 2025, 4 29 27 PM.jpg",
-   "sha256": "8bc5feef610155fa383b8d957370432656b33bb83611ff136a1aae5930cc1d56"
+   "sha256": "8bc5feef610155fa383b8d957370432656b33bb83611ff136a1aae5930cc1d56",
+   "faceTop": 0.475
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 19 2025, 4 29 38 PM.jpg",
-   "sha256": "3416abbfb0750615bb27be26017d66f4f852637778371c5d72bfd75d5d1220a1"
+   "sha256": "3416abbfb0750615bb27be26017d66f4f852637778371c5d72bfd75d5d1220a1",
+   "faceTop": 0.468
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 19 2025, 4 30 44 PM.jpg",
-   "sha256": "5d0705702e58b666a465d6a53012a6239580f08071fd847528a6a143c09061e1"
+   "sha256": "5d0705702e58b666a465d6a53012a6239580f08071fd847528a6a143c09061e1",
+   "faceTop": 0.44
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 19 2025, 4 31 46 PM.jpg",
-   "sha256": "1d5393f1bbf69cb71620d73e7baa66ed204ca4b1f0cc7f50765aabeb2b873a4d"
+   "sha256": "1d5393f1bbf69cb71620d73e7baa66ed204ca4b1f0cc7f50765aabeb2b873a4d",
+   "faceTop": 0.407
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 20 2025, 1 09 48 PM.jpg",
-   "sha256": "0cb060dff18d9451e7d752e0d19171ffee3659eb0d4aadf58cc784952a0f1ed2"
+   "sha256": "0cb060dff18d9451e7d752e0d19171ffee3659eb0d4aadf58cc784952a0f1ed2",
+   "faceTop": 0.602
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 20 2025, 1 26 57 PM.jpg",
-   "sha256": "228365d296a73cf30238cd755909f4becd871be67aad89a857ad7a6a87b8668f"
+   "sha256": "228365d296a73cf30238cd755909f4becd871be67aad89a857ad7a6a87b8668f",
+   "faceTop": 0.443
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 20 2025, 12 55 10 PM.jpg",
-   "sha256": "81fd974b6a36f98d0830f1b92daa75b4cd7085499391039bb09608fb1fbf60ec"
+   "sha256": "81fd974b6a36f98d0830f1b92daa75b4cd7085499391039bb09608fb1fbf60ec",
+   "faceTop": 0.51
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 20 2025, 12 55 13 PM.jpg",
-   "sha256": "8f71a4c4c3f9cff6dd736e4c93411b3153b4a5d1de073ead81dd6527aef053ff"
+   "sha256": "8f71a4c4c3f9cff6dd736e4c93411b3153b4a5d1de073ead81dd6527aef053ff",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Dec 31 2021, 8 57 11 PM.jpg",
-   "sha256": "a7287ccc8e680b90d6fd7674d7cd872684486e5072f85091997c50a948643847"
+   "sha256": "a7287ccc8e680b90d6fd7674d7cd872684486e5072f85091997c50a948643847",
+   "faceTop": 0.267
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jan 08 2026, 12 32 50 PM (4).jpg",
-   "sha256": "7272a7037d88651966d26fd9ee63459a17baa0a51a156bcc6a9454dade3e07d5"
+   "sha256": "7272a7037d88651966d26fd9ee63459a17baa0a51a156bcc6a9454dade3e07d5",
+   "faceTop": 0.387
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jan 30 2022, 11 41 43 AM.jpg",
-   "sha256": "289d58a5871cef1294866918e1d6c986784c565067e100c2e412960983b1d4ae"
+   "sha256": "289d58a5871cef1294866918e1d6c986784c565067e100c2e412960983b1d4ae",
+   "faceTop": 0.489
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jul 01 2022, 6 31 05 PM.jpg",
-   "sha256": "4744897d963e0dbd49af0e19cf1d67e897c5f54e32a181167921fa86acfce17f"
+   "sha256": "4744897d963e0dbd49af0e19cf1d67e897c5f54e32a181167921fa86acfce17f",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jul 04 2021, 12 05 18 PM.jpg",
-   "sha256": "bf25d4f858eed15ed5ab19bd4d977ddf20cee7db33edf16e45213261cd8e5398"
+   "sha256": "bf25d4f858eed15ed5ab19bd4d977ddf20cee7db33edf16e45213261cd8e5398",
+   "faceTop": 0.386
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jul 24 2022, 10 57 14 AM.jpg",
-   "sha256": "e4338a9a726d0c059890128d424596c769e5169441ab935d511608ed829e96a6"
+   "sha256": "e4338a9a726d0c059890128d424596c769e5169441ab935d511608ed829e96a6",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jul 29 2021, 7 24 12 PM.jpg",
-   "sha256": "aae5eff8984f0bb1276a85090577408fd83db545b6448d31921cbafad3cf7336"
+   "sha256": "aae5eff8984f0bb1276a85090577408fd83db545b6448d31921cbafad3cf7336",
+   "faceTop": 0.511
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jun 19 2021, 1 50 50 PM.jpg",
-   "sha256": "c8216bf1f7e87ae81dfeb38cef7fe5f5736837216f89562cd5cf72dbd936d898"
+   "sha256": "c8216bf1f7e87ae81dfeb38cef7fe5f5736837216f89562cd5cf72dbd936d898",
+   "faceTop": 0.437
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jun 24 2021, 6 59 19 PM.jpg",
-   "sha256": "0371676892ec285d2a63428aad66160c0f7f2e2defaa1930cbe9450495176376"
+   "sha256": "0371676892ec285d2a63428aad66160c0f7f2e2defaa1930cbe9450495176376",
+   "faceTop": 0.345
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jun 25 2022, 2 01 58 PM.jpg",
-   "sha256": "47db4b1648cfa9e0319c2c8b06ebe1fffaf03bba34e01f335654bc5a9c8722ba"
+   "sha256": "47db4b1648cfa9e0319c2c8b06ebe1fffaf03bba34e01f335654bc5a9c8722ba",
+   "faceTop": 0.514
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jun 27 2022, 12 28 06 PM.jpg",
-   "sha256": "2c06aaeecb8642c2d81035383064ed0eed26eb14d5d79a7b67121aa0d6af61bb"
+   "sha256": "2c06aaeecb8642c2d81035383064ed0eed26eb14d5d79a7b67121aa0d6af61bb",
+   "faceTop": 0.561
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jun 28 2022, 3 24 22 PM.jpg",
-   "sha256": "cce2908eb749fa74c7060939598bbd03bcf03225fc5b3681832666a58d39e55e"
+   "sha256": "cce2908eb749fa74c7060939598bbd03bcf03225fc5b3681832666a58d39e55e",
+   "faceTop": 0.354
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Jun 29 2022, 6 04 56 PM.jpg",
-   "sha256": "d37c342a5cd77e710a7fad5bddcd715b7e59bbd1009000bbdf16888c51856ff6"
+   "sha256": "d37c342a5cd77e710a7fad5bddcd715b7e59bbd1009000bbdf16888c51856ff6",
+   "faceTop": 0.481
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo May 24 2021, 6 35 09 PM.jpg",
-   "sha256": "d9ccbdac312cd50744297e4642cbfc845d1ac87d3cf2b12e0ab00a729e348f1d"
+   "sha256": "d9ccbdac312cd50744297e4642cbfc845d1ac87d3cf2b12e0ab00a729e348f1d",
+   "faceTop": 0.388
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Nov 06 2022, 3 32 33 PM.jpg",
-   "sha256": "93aac443a1f14fb1deb3f017db49c98be313ffa413851e87726f65b1d75e456e"
+   "sha256": "93aac443a1f14fb1deb3f017db49c98be313ffa413851e87726f65b1d75e456e",
+   "faceTop": 0.529
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Nov 10 2021, 10 37 36 AM.jpg",
-   "sha256": "bb98de663cfe12019a3270d5cc8acb7d600629e15cf9080f32aa760df97bd7fd"
+   "sha256": "bb98de663cfe12019a3270d5cc8acb7d600629e15cf9080f32aa760df97bd7fd",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Nov 10 2022, 5 51 34 PM.jpg",
-   "sha256": "a1c67632799e4f1e55b208814677e005947df7fe5e74529feaff16c8468d1fd2"
+   "sha256": "a1c67632799e4f1e55b208814677e005947df7fe5e74529feaff16c8468d1fd2",
+   "faceTop": 0.382
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Nov 12 2020, 10 53 27 AM.jpg",
-   "sha256": "b8ad871c8e6bd7dd867e54d9009a91d32828c2107d608c1f698bbe9e75c8aec5"
+   "sha256": "b8ad871c8e6bd7dd867e54d9009a91d32828c2107d608c1f698bbe9e75c8aec5",
+   "faceTop": 0.586
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Nov 15 2020, 1 42 46 PM.jpg",
-   "sha256": "88bd3336634d1ba7cb519647088fe8fd955ebd38e04de6af233ea8a77fdc8dc1"
+   "sha256": "88bd3336634d1ba7cb519647088fe8fd955ebd38e04de6af233ea8a77fdc8dc1",
+   "faceTop": 0.466
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Nov 15 2020, 11 33 36 AM.jpg",
-   "sha256": "1c37bb38b66de3dbf1da6915812423cf68904d40f5971081dd35de9fe9cd46f1"
+   "sha256": "1c37bb38b66de3dbf1da6915812423cf68904d40f5971081dd35de9fe9cd46f1",
+   "faceTop": 0.488
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Nov 26 2022, 11 51 36 AM.jpg",
-   "sha256": "7e271ff43252fec043ba34167ce71c8ed969cb1e829c290aefeb9ae46ae1e6f9"
+   "sha256": "7e271ff43252fec043ba34167ce71c8ed969cb1e829c290aefeb9ae46ae1e6f9",
+   "faceTop": 0.503
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Oct 02 2022, 4 31 23 PM.jpg",
-   "sha256": "f6dcb47a0aecd71c8bd3bc776bfc7c6296153d668d310e569259a704d3c4cd0e"
+   "sha256": "f6dcb47a0aecd71c8bd3bc776bfc7c6296153d668d310e569259a704d3c4cd0e",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Oct 02 2022, 5 24 01 PM.jpg",
-   "sha256": "41d861781d9b642845e174e81278ca1c11663e1195ecfbfefd6a2c89a9722f3b"
+   "sha256": "41d861781d9b642845e174e81278ca1c11663e1195ecfbfefd6a2c89a9722f3b",
+   "faceTop": 0.484
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Oct 02 2022, 5 24 36 PM.jpg",
-   "sha256": "38c2f94a1ccf3a52a4e390d556eab91741a881558db6aafd2aec8bffa672c01c"
+   "sha256": "38c2f94a1ccf3a52a4e390d556eab91741a881558db6aafd2aec8bffa672c01c",
+   "faceTop": 0.489
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Oct 03 2020, 3 27 46 PM.jpg",
-   "sha256": "055f317003409dc0e16921cfb0bf1b291982e037304a90a4cf51b480c2af10df"
+   "sha256": "055f317003409dc0e16921cfb0bf1b291982e037304a90a4cf51b480c2af10df",
+   "faceTop": 0.431
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Oct 03 2020, 5 54 50 PM.jpg",
-   "sha256": "79e8f4614a0be5a48d219a91dce581ee2cd2540dd7921f67a40e56769b66ce4a"
+   "sha256": "79e8f4614a0be5a48d219a91dce581ee2cd2540dd7921f67a40e56769b66ce4a",
+   "faceTop": 0.403
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Oct 29 2021, 5 01 45 PM.jpg",
-   "sha256": "3fdd7b10cf0bf8a4b404c93257a789a753fd5ce9b4de7a75e5c2040548ec3c9c"
+   "sha256": "3fdd7b10cf0bf8a4b404c93257a789a753fd5ce9b4de7a75e5c2040548ec3c9c",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Oct 30 2021, 8 34 29 PM.jpg",
-   "sha256": "a19dab02358e1e4f8c93a60582d9b9005a4b4de522f2bdccf7588f372d4c62e6"
+   "sha256": "a19dab02358e1e4f8c93a60582d9b9005a4b4de522f2bdccf7588f372d4c62e6",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Sep 27 2021, 3 55 48 PM.jpg",
-   "sha256": "b26b6a3ead5038a9887abef8ec03b67c2fb234fd10068da04a3f654e87c18d8e"
+   "sha256": "b26b6a3ead5038a9887abef8ec03b67c2fb234fd10068da04a3f654e87c18d8e",
+   "faceTop": 0.354
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/Photo Sep 27 2022, 3 38 19 PM.jpg",
-   "sha256": "acf95608fa70b68605b30e83860ca7a2644461e583368684f6bbad3e6ed8d80a"
+   "sha256": "acf95608fa70b68605b30e83860ca7a2644461e583368684f6bbad3e6ed8d80a",
+   "faceTop": 0.343
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/beach_sunset_portrait (1).jpg",
-   "sha256": "3b6410fa8e83d011dd5222f61869ca8447dfda9a1320b3f7306040d740268d5f"
+   "sha256": "3b6410fa8e83d011dd5222f61869ca8447dfda9a1320b3f7306040d740268d5f",
+   "faceTop": 0.477
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/beach_sunset_portrait.jpg",
-   "sha256": "aff2804e97c9b162fa7c1099f88b8ae0a1807c1a88e93da3c279b5edd90c9d93"
+   "sha256": "aff2804e97c9b162fa7c1099f88b8ae0a1807c1a88e93da3c279b5edd90c9d93",
+   "faceTop": 0.589
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/beach_sunset_reflection.jpg",
-   "sha256": "26b9b05451944468ea27184324c4c76ec8df6fdca3f9e806c3871cb8347be87d"
+   "sha256": "26b9b05451944468ea27184324c4c76ec8df6fdca3f9e806c3871cb8347be87d",
+   "faceTop": 0.431
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/beach_sunset_silhouette.jpg",
-   "sha256": "8371425bc7a73d8d5c3cb8ed2a2fdc91d66982bdfeec6ad086cc1378e439774e"
+   "sha256": "8371425bc7a73d8d5c3cb8ed2a2fdc91d66982bdfeec6ad086cc1378e439774e",
+   "faceTop": 0.396
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/focused_male_with_notebook_and_headphones.jpeg",
-   "sha256": "57971ae1084cd042f3e2ef0159df34fba58c7746502982241cfcf233774418f3"
+   "sha256": "57971ae1084cd042f3e2ef0159df34fba58c7746502982241cfcf233774418f3",
+   "faceTop": 0.395
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/hiking_on_wooden_path_in_nature.jpeg",
-   "sha256": "fffef9ec1465ab3e05aed5c383724a7a7cfe6916c6cb64f01bc68fae691e7d2e"
+   "sha256": "fffef9ec1465ab3e05aed5c383724a7a7cfe6916c6cb64f01bc68fae691e7d2e",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/man-using-headphones-and-phone.jpeg",
-   "sha256": "df246eeea2013fe27b5982c292ad8021ba073f9854e7631a3603151d973758f0"
+   "sha256": "df246eeea2013fe27b5982c292ad8021ba073f9854e7631a3603151d973758f0",
+   "faceTop": 0.344
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/man_by_the_lake_in_snowy_mountains.JPG",
-   "sha256": "e0c7424f776817be97e7d660f48ba3e1ddf34dbe6b429a996eee749d696530f0"
+   "sha256": "e0c7424f776817be97e7d660f48ba3e1ddf34dbe6b429a996eee749d696530f0",
+   "faceTop": 0.49
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/man_in_snowy_mountain_landscape.JPG",
-   "sha256": "ab05257595ca975a2d190dd356b621164c34856a128bf5da23ee21b8261e502a"
+   "sha256": "ab05257595ca975a2d190dd356b621164c34856a128bf5da23ee21b8261e502a",
+   "faceTop": 0.448
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/man_winter_lake.JPG",
-   "sha256": "11c2d7f446ae7fe5a7d85f8ea7947a638050fa219bec3426bd86dcaac2296436"
+   "sha256": "11c2d7f446ae7fe5a7d85f8ea7947a638050fa219bec3426bd86dcaac2296436",
+   "faceTop": 0.549
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/mountain_thumbs_up.JPG",
-   "sha256": "c74fdf286ce80afdeaf7e561723e519b7da021cd431c51bd78ad8df2ca971509"
+   "sha256": "c74fdf286ce80afdeaf7e561723e519b7da021cd431c51bd78ad8df2ca971509",
+   "faceTop": 0.478
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/person_reading_with_headphones.jpeg",
-   "sha256": "fd05e7b6acd9705eb1d737a94e6fd545b5580c53a1a92a81d78732039bc5ed76"
+   "sha256": "fd05e7b6acd9705eb1d737a94e6fd545b5580c53a1a92a81d78732039bc5ed76",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/person_sunset_beach.jpg",
-   "sha256": "66493ed77cc1d2396435884f27c27dff756e608dcf8d08ce1ec369d7b788e6fe"
+   "sha256": "66493ed77cc1d2396435884f27c27dff756e608dcf8d08ce1ec369d7b788e6fe",
+   "faceTop": 0.557
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/shopping_mall_cartier_display (1).jpg",
-   "sha256": "9dc4f35c4aba746937de3f8cf16262ba3c94b0998f986804dcb7d07522ccf9ee"
+   "sha256": "9dc4f35c4aba746937de3f8cf16262ba3c94b0998f986804dcb7d07522ccf9ee",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/smiling-man-mountain-background.JPG",
-   "sha256": "f64f1d145e8ec7b5e54317682a0ff6a68ff2f9d6d64323f983f0cb0e79cc52b9"
+   "sha256": "f64f1d145e8ec7b5e54317682a0ff6a68ff2f9d6d64323f983f0cb0e79cc52b9",
+   "faceTop": 0.47
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/sunset-beach-reflection.jpg",
-   "sha256": "6c8ccff396bc7d79c89fceec81369cfaf13bc6e827951a1a7c5d8c3b5e27d3e7"
+   "sha256": "6c8ccff396bc7d79c89fceec81369cfaf13bc6e827951a1a7c5d8c3b5e27d3e7",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/sunset_beach_pensive.jpg",
-   "sha256": "1fe93492565949fb83e1b45efc626d00cd047ca5c87d9da109db7f1c2334c94d"
+   "sha256": "1fe93492565949fb83e1b45efc626d00cd047ca5c87d9da109db7f1c2334c94d",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/sunset_beach_portrait.jpg",
-   "sha256": "ff1ea66a9dc5a0de6899b89ca210392f41fa3e08786511fb2bf1298c00316425"
+   "sha256": "ff1ea66a9dc5a0de6899b89ca210392f41fa3e08786511fb2bf1298c00316425",
+   "faceTop": 0.545
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/sunset_portrait_beach.jpg",
-   "sha256": "5b1ca03a3de875d5129ca04d34fd4c8a0d88072689e5d5ad92524a05673b6f2f"
+   "sha256": "5b1ca03a3de875d5129ca04d34fd4c8a0d88072689e5d5ad92524a05673b6f2f",
+   "faceTop": 0.573
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/unboxing_gift_box.jpg",
-   "sha256": "ebbdac83c0001f90597ef0123cdfb6552ba37fc01cd43193990facf93e7a255c"
+   "sha256": "ebbdac83c0001f90597ef0123cdfb6552ba37fc01cd43193990facf93e7a255c",
+   "faceTop": 0.421
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/walking_on_path_in_nature.jpeg",
-   "sha256": "2ad437c4f16602e57eda86f66111b5ae05efd35eda4d847a09259606bfaa2f8d"
+   "sha256": "2ad437c4f16602e57eda86f66111b5ae05efd35eda4d847a09259606bfaa2f8d",
+   "faceTop": null
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/working_remotely_with_a_view.jpeg",
-   "sha256": "37287de19b027ec0fbe94c8090f8079a496e946fda0b584c25478a906fa5cda2"
+   "sha256": "37287de19b027ec0fbe94c8090f8079a496e946fda0b584c25478a906fa5cda2",
+   "faceTop": 0.505
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Image B-rolls/young-man-using-phone-with-headphones.jpeg",
-   "sha256": "ff8b8e3c9b30bd2a5f409623ef34d7f3d9b24d1244f19791e94d6330c18711ae"
+   "sha256": "ff8b8e3c9b30bd2a5f409623ef34d7f3d9b24d1244f19791e94d6330c18711ae",
+   "faceTop": 0.352
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Photo Jan 11 2026, 1 36 55 PM.jpg",
-   "sha256": "f6a803edc3664c5c7bf1e88586b63b6112c4c19f9824fb646aba39b9d303b4dd"
+   "sha256": "f6a803edc3664c5c7bf1e88586b63b6112c4c19f9824fb646aba39b9d303b4dd",
+   "faceTop": 0.596
   },
   {
    "file": "/Users/antoniomonteiro/Dropbox/C2C/B-Roll/Photo Jan 11 2026, 1 38 12 PM.jpg",
-   "sha256": "688170dd9ed64433bdbee6522f19b9641a06f180cd3f4978e1e882077b447e49"
+   "sha256": "688170dd9ed64433bdbee6522f19b9641a06f180cd3f4978e1e882077b447e49",
+   "faceTop": 0.552
   }
  ]
 }
