@@ -25,6 +25,8 @@ export interface ReleaseMedia { path: string; name: string; mimeType: string; sh
  */
 export class InstagramRelease extends WdaApp implements ReleaseDriver {
     private fromCreateTrialReel = false;
+    /** When the one Share tap happened; receipts only count posts created after it (minus 10 minutes of clock skew). */
+    private sharedAt = 0;
     constructor(base:string,signal:AbortSignal,private imports?:DirectMediaStore){super(base,signal);}
     protected override async tapElement(using:string,value:string,what:string,ms=20_000) {
         if(using!=='accessibility id'||!['profile-tab','back-button','BackButton','more-options-button','Edit cover'].includes(value))
@@ -392,6 +394,7 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         // Exactly one tap. Callers claim the release before this and never call it twice.
         const id = await this.waitFor('accessibility id', 'share-sheet-share-button', 'Share button');
         await this.assertInputApp();
+        this.sharedAt = Date.now();
         const r = await this.raw(`${this.session}/element/${id}/click`, {});
         if (!r.ok || r.body.value?.error) throw new Error(`Share tap result is uncertain: ${r.body.value?.error ?? r.status}`);
     }
@@ -463,7 +466,7 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         const facebook = input.targets.some(t => t.platform === 'facebook'), deadline = Date.now() + waitMs;
         let found: Awaited<ReturnType<typeof metaReceipts>> = {};
         for (;;) {
-            try { found = await metaReceipts(input.caption); } catch { return undefined; }
+            try { found = await metaReceipts(input.caption, this.sharedAt ? this.sharedAt - 10 * 60_000 : 0); } catch { return undefined; }
             if (found.instagram && (!facebook || found.facebook || found.facebookMissingCaption)) break;
             if (Date.now() >= deadline) return undefined;
             await this.sleep(20_000);
@@ -553,7 +556,7 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
      * Falls back to the Trial grid when the link is unknown or the caption does not match. */
     private async openByLink(url?: string): Promise<boolean> {
         if (!/^http:\/\/127\.0\.0\.1:/.test(this.base)) return false; // unit tests use fake hosts
-        try { url ??= (await metaReceipts(this.input!.caption)).instagram?.url; } catch { return false; }
+        try { url ??= (await metaReceipts(this.input!.caption, this.sharedAt ? this.sharedAt - 10 * 60_000 : 0)).instagram?.url; } catch { return false; }
         if (!url || !/^https:\/\/www\.instagram\.com\/reel\//.test(url)) return false;
         await this.request(this.session + '/url', { url });
         await this.waitForOwnReelViewer().catch(() => undefined);

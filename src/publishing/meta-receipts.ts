@@ -27,24 +27,25 @@ export function sameCaptionAroundMentions(want: string, got: string) {
     return got.startsWith(parts[0]!);
 }
 
-/** Look up the post once. Instagram must match exactly; Facebook returns `missingCaption` when its newest Reel has none. */
-export async function metaReceipts(caption: string) {
+/** Look up the post once. Instagram must match exactly; Facebook returns `missingCaption` when its newest Reel has none.
+ * `after` (ms): only posts created at or after it count (Oct 15: reposts and hook variants share a caption with older posts). */
+export async function metaReceipts(caption: string, after = 0) {
     const s = loadSecrets();
     const g = async (path: string, params: Record<string, string>) =>
         (await (await fetch(`https://graph.facebook.com/v21.0/${path}?${new URLSearchParams(params)}`, { signal: AbortSignal.timeout(30_000) })).json()) as any;
     const page = await g(s.page, { fields: 'access_token,instagram_business_account', access_token: s.meta });
     const token = page.access_token ?? s.meta, ig = page.instagram_business_account?.id, want = normalizeText(caption);
     const out: { instagram?: Receipt; facebook?: Receipt; facebookMissingCaption?: boolean } = {};
-    if (ig) for (const m of (await g(ig + '/media', { fields: 'caption,permalink,media_product_type,is_shared_to_feed', limit: '25', access_token: token })).data ?? [])
+    if (ig) for (const m of (await g(ig + '/media', { fields: 'caption,permalink,media_product_type,is_shared_to_feed,timestamp', limit: '25', access_token: token })).data ?? [])
         // is_shared_to_feed is false for Trial Reels and true for regular Reels (checked on Oct 4 to 13 posts).
-        if (normalizeText(m.caption ?? '') === want) { out.instagram = { verified: true, source: 'instagram_graph', url: m.permalink, evidence: 'Exact full caption on @antoniorevenue via the Instagram Graph API', sharedToFeed: m.is_shared_to_feed }; break; }
+        if (Date.parse(m.timestamp ?? 0) >= after && normalizeText(m.caption ?? '') === want) { out.instagram = { verified: true, source: 'instagram_graph', url: m.permalink, evidence: 'Exact full caption on @antoniorevenue via the Instagram Graph API', sharedToFeed: m.is_shared_to_feed }; break; }
     // Hook variants share a caption (Oct 8: heystevetan-C matched yesterday's heystevetan-A). Newest first.
     const reels = ((await g(s.page + '/video_reels', { fields: 'description,permalink_url,created_time', limit: '25', access_token: token })).data ?? [])
         .sort((a: any, b: any) => Date.parse(b.created_time ?? 0) - Date.parse(a.created_time ?? 0));
     // Facebook turns @handles into Page names (Oct 8: "@antoniorevenue" became "Antonio | More Leads & Sales..."),
     // so match the caption text around each mention, in order, on the newest Reel that has it.
     const sameText = (d: string) => sameCaptionAroundMentions(want, d);
-    for (const r of reels) if (sameText(normalizeText(r.description ?? ''))) { out.facebook = { verified: true, source: 'facebook_graph', url: 'https://www.facebook.com' + r.permalink_url, evidence: 'Exact full caption on Antonio Revenue Reels via the Facebook Graph API' }; break; }
+    for (const r of reels) if (Date.parse(r.created_time ?? 0) >= after && sameText(normalizeText(r.description ?? ''))) { out.facebook = { verified: true, source: 'facebook_graph', url: 'https://www.facebook.com' + r.permalink_url, evidence: 'Exact full caption on Antonio Revenue Reels via the Facebook Graph API' }; break; }
     if (!out.facebook && reels[0] && !normalizeText(reels[0].description ?? '')) out.facebookMissingCaption = true;
     return out;
 }

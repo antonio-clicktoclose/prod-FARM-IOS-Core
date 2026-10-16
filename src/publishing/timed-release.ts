@@ -35,11 +35,14 @@ export class TimedReleaseStore {
             const duplicate = await c.query(`SELECT i.id FROM scheduler.publishing_items i
               LEFT JOIN scheduler.publishing_releases r ON r.item_id=i.id
               WHERE i.id<>$1 AND i.media->>'sha256'=$2
-              AND (i.status IN ('published','needs_review','publishing') OR r.state IN ('armed','running','published','needs_review'))
+              AND (CASE WHEN $4::boolean
+                -- Antonio (Oct 15): approved reposts of older videos may go out again; never two live releases at once.
+                THEN i.status IN ('needs_review','publishing') OR r.state IN ('armed','running','needs_review')
+                ELSE i.status IN ('published','needs_review','publishing') OR r.state IN ('armed','running','published','needs_review') END)
               AND EXISTS (SELECT 1 FROM jsonb_array_elements(i.input->'targets') a,
                 jsonb_array_elements($3::jsonb) b WHERE a->>'platform'=b->>'platform'
                 AND lower(ltrim(a->>'account','@'))=lower(ltrim(b->>'account','@'))) LIMIT 1`,
-              [itemId,item.media.sha256,JSON.stringify(item.input.targets)]);
+              [itemId,item.media.sha256,JSON.stringify(item.input.targets),!!item.results?.repost]);
             if (duplicate.rowCount) throw new Error('This video already has a release for this account: '+duplicate.rows[0].id);
             const tiktok = item.input.targets.find((t:any)=>t.platform==='tiktok');
             if(tiktok) {

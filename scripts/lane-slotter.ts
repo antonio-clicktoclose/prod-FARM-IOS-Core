@@ -24,7 +24,8 @@ try{
   const mine=rows.filter(r=>laneOf(r.input)===lane);
   const taken=new Set(mine.filter(r=>fixed(r)&&(r.state!=='needs_review'||r.share_claimed_at)).map(slotOf));
   const grid=slotsFrom(from,hoursOf[lane]).filter(s=>!taken.has(s));
-  const queue=mine.filter(r=>!fixed(r)).sort((a,b)=>t(a)-t(b)||String(a.created_at).localeCompare(String(b.created_at)));
+  // Fresh videos first; approved reposts (repost-filler.ts) only take slots no new video needs.
+  const queue=mine.filter(r=>!fixed(r)).sort((a,b)=>Number(!!a.results?.repost)-Number(!!b.results?.repost)||t(a)-t(b)||String(a.created_at).localeCompare(String(b.created_at)));
   queue.forEach((r,n)=>{if(!grid[n])throw Error(`No free ${lane} slot in 30 days`);});
   for(const [n,r] of queue.entries()){
    const runAt=new Date(grid[n]!+(lane==='youtube'?cadence.youtubeOffsetMinutes*minute:0)).toISOString();

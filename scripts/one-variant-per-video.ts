@@ -10,8 +10,9 @@ export const baseOf=(name:string)=>name.replace(/^video-(video-)?/,'').replace(/
 const variantOf=(name:string)=>name.replace(/^video-(video-)?/,'').replace(/\.mp4$/,'');
 const db=createDatabaseConnection();
 try{
+ // Approved reposts (repost-filler.ts, Oct 15) re-run a video that already went out; they are never cancelled here.
  const rows=(await db.pool.query(`SELECT i.id,i.status,i.media->>'name' n,r.state,r.run_at,r.share_claimed_at FROM scheduler.publishing_items i
-   LEFT JOIN scheduler.publishing_releases r ON r.item_id=i.id WHERE i.status<>'cancelled'`)).rows;
+   LEFT JOIN scheduler.publishing_releases r ON r.item_id=i.id WHERE i.status<>'cancelled' AND NOT (i.results ? 'repost')`)).rows;
  const groups=new Map<string,any[]>();for(const r of rows){const b=baseOf(r.n);groups.set(b,[...(groups.get(b)??[]),r]);}
  let cancelled=0;
  for(const [base,g] of groups){
