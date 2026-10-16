@@ -9,6 +9,10 @@ export const publishingCadence = {
     storyCron: '0 9,17 * * *', storyTimes: ['09:00', '17:00'],
     storySequencesPerDay: 2, planningDays: 3,
     missedSlotPolicy: 'review_before_rescheduling',
+    // Antonio, Oct 15 19:15 PT: 8 Instagram Trial Reels a day (each with its linked Facebook post), 4 TikToks and
+    // 4 YouTube Shorts. scripts/lane-slotter.ts owns every armed post's time from these lists, one lane per platform;
+    // a Short posts 22 minutes after its slot so it never collides with the Instagram post.
+    instagramHours: [7, 9, 11, 13, 15, 17, 19, 21], tiktokHours: [9, 13, 17, 21], youtubeHours: [9, 13, 17, 21], youtubeOffsetMinutes: 22,
 } as const;
 
 export function upcomingVideoSlots(now = new Date(), count = 72): Date[] {
@@ -16,4 +20,21 @@ export function upcomingVideoSlots(now = new Date(), count = 72): Date[] {
         currentDate: now, tz: publishingCadence.timezone,
     });
     return Array.from({length: count}, () => cron.next().toDate());
+}
+
+/** UTC ms for hour `h` (PT) on the PT calendar day `day` (YYYY-MM-DD), handling daylight saving. */
+function ptHour(day:string,h:number){
+ const guess=Date.parse(`${day}T${String(h).padStart(2,'0')}:00:00Z`);
+ const shown=new Date(guess).toLocaleString('en-US',{timeZone:publishingCadence.timezone,hour12:false,hour:'2-digit',year:'numeric',month:'2-digit',day:'2-digit'});
+ const [md,hh]=shown.split(', ');const [m,d,y]=md.split('/');
+ const diff=Date.parse(`${y}-${m}-${d}T${hh.padStart(2,'0').replace('24','00')}:00:00Z`)-guess;
+ return guess-diff;
+}
+export function slotsFrom(from:number,hours:readonly number[],days=30){
+ const out:number[]=[];
+ for(let n=0;n<=days;n++){
+  const day=new Date(from+n*86400000).toLocaleDateString('en-CA',{timeZone:publishingCadence.timezone});
+  for(const h of hours){const t=ptHour(day,h);if(t>=from)out.push(t);}
+ }
+ return [...new Set(out)].sort((a,b)=>a-b);
 }

@@ -74,7 +74,8 @@ try{
  // Posts due within 20 minutes stay where they are; later ones form the shifting queue in their current order.
  // Only posts this script scheduled may shift. Posts other tools armed for a set time keep it, and their hours are skipped.
  const owned=(i:any)=>!!i.results?.autopilotBacklog;
- const shifting=keptArmed.filter(i=>owned(i)&&runAtOf(i)>=Date.now()+20*60000&&!releases.get(i.id).share_claimed_at);
+ // --no-shift (Oct 15): lane-slotter.ts owns the times of armed posts, so this script only arms held and missed ones.
+ const shifting=process.argv.includes('--no-shift')?[]:keptArmed.filter(i=>owned(i)&&runAtOf(i)>=Date.now()+20*60000&&!releases.get(i.id).share_claimed_at);
  // Keep the same gap around posts other tools armed for a set time.
  const fixedTimes=keptArmed.filter(i=>!owned(i)).map(runAtOf);
  const keptGroups=[...new Set(shifting.sort((a,b)=>runAtOf(a)-runAtOf(b)).map(i=>i.media.sha256))].map(hash=>shifting.filter(i=>i.media.sha256===hash));
