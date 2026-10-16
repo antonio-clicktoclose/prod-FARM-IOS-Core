@@ -211,7 +211,8 @@ export async function buildLifestylePlan(pool: import('pg').Pool, runAt: Date, {
         { photo: await pick(() => true), text: lines[1]! },
         { photo: await pick(() => true), text: lines[2]! },
         { photo: await pick(cardSafe), text: card.headline, card },
-        { photo: await pick(() => true), text: keyword ? `Comment ${keyword} on the reel` : 'Watch the full reel', link: true },
+        // The link sticker sits mid-frame, so the last picture keeps the face low (or not visible).
+        { photo: await pick(cardSafe), text: keyword ? `Comment ${keyword} on the reel` : 'Watch the full reel', link: true },
     ];
     const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(runAt);
     const dir = path.resolve('.scheduler-data/story-assets', `${date}-lifestyle-${runAt.toISOString().slice(11, 13)}`);

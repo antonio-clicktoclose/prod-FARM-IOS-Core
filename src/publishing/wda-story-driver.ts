@@ -253,8 +253,14 @@ export class WdaStoryDriver extends InstagramRelease {
         }
         await this.tapElement('predicate string', '(name == "Done" OR label == "Done") AND visible == 1', 'Link Done');
         await this.waitFor('accessibility id', 'add-text-button', 'Story editor after link', 15_000);
-        const stickers = (await this.request(this.session + '/elements', { using: 'predicate string', value: `name BEGINSWITH "Link Sticker ${url}" AND visible == 1` })).value as unknown[];
-        if (stickers.length !== 1) throw new Error('Link sticker readback failed');
+        // The sticker renders a moment after Done (Oct 15 rehearsal): read the screen tree for up to 8 s.
+        const marker = `name="Link Sticker ${url}`;
+        for (const deadline = Date.now() + 8_000; ; await this.sleep(700)) {
+            const found = String((await this.request(this.session + '/source')).value).split(marker).length - 1;
+            if (found === 1) break;
+            if (found > 1) throw new Error('More than one link sticker on the frame');
+            if (Date.now() >= deadline) throw new Error('Link sticker readback failed');
+        }
     }
 
     private async openShareSheet(label: string) {
