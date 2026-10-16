@@ -1,4 +1,6 @@
-/** Keep Instagram posting when new videos run out (Antonio, Oct 15: "if we are out of videos repost the old ones that
+/** RETIRED Oct 15 21:15 (Antonio): Instagram flagged the first repost as already-posted content and he deleted it.
+ * Never post the exact same video twice. Not scheduled; the duplicate guard in TimedReleaseStore.arm now blocks it too.
+ * Keep Instagram posting when new videos run out (Antonio, Oct 15: "if we are out of videos repost the old ones that
  * performed well that are following our ai niche"). Hourly, after lane-slotter.ts. For each Instagram slot (cadence.ts)
  * in the next 6 hours with no post, re-queue the best older Reel: AI-niche caption, first posted 7+ days ago, no
  * Instagram release in the last 7 days (Trial Reels reach non-followers first), source file still on disk, ranked by Instagram views (Graph insights, read-only), at least 500.
@@ -13,7 +15,8 @@ import {normalizeText} from '../src/publishing/meta-receipts.js';
 import {TimedReleaseStore} from '../src/publishing/timed-release.js';
 import {DirectMediaStore} from '../src/publishing/direct-media.js';
 
-const apply=process.argv.includes('--apply'),day=86400000,hour=3600000,minute=60000;
+if(process.argv.includes('--apply'))throw Error('Reposting the same video is retired (Antonio, Oct 15)');
+const apply=false,day=86400000,hour=3600000,minute=60000;
 const minViews=500;   // "performed well": at least 500 Instagram views
 const horizon=Number(process.argv.find(a=>a.startsWith('--horizon-hours='))?.split('=')[1]??6);
 export const aiNiche=/\b(ai|a\.i\.|claude|chatgpt|gpt|openai|gemini|llm|agents?|automat\w*|prompt\w*|cursor|copilot|n8n|hermes|heygen|elevenlabs|github|open[- ]source|repo)\b/i;
