@@ -123,7 +123,8 @@ export class WdaStoryDriver extends InstagramRelease {
         const media = frame.media;
         if (media.mimeType !== 'image/png') throw new Error('Story frames must be reviewed PNG photos');
         if (createHash('sha256').update(await readFile(media.path)).digest('hex') !== media.sha256) throw new Error('Story frame image changed since review');
-        if (!frame.text.trim() || frame.text.length > 300) throw new Error('Story frame text is empty or too long');
+        if (!frame.textBurnedIn && (!frame.text.trim() || frame.text.length > 300)) throw new Error('Story frame text is empty or too long');
+        if (frame.linkUrl && !/^https:\/\/(www\.)?instagram\.com\/reel\/[A-Za-z0-9_-]+\/?$/.test(frame.linkUrl)) throw new Error('Story link sticker only points at our own Instagram Reels');
         const imported = await this.storyImports.ensure(this.deviceUdid, media, this.base, this.signal);
         if (imported.albumName !== 'PF-' + media.sha256.slice(0, 12)) throw new Error('Story import went to the wrong album');
 
@@ -145,7 +146,8 @@ export class WdaStoryDriver extends InstagramRelease {
         await this.waitFor('accessibility id', 'add-text-button', 'Story editor', 30_000);
 
         await this.addMusic();
-        await this.addText(frame.text);
+        if (!frame.textBurnedIn) await this.addText(frame.text);
+        if (frame.linkUrl) await this.addLinkSticker(frame.linkUrl, frame.linkText);
         const preview = await this.proof(label + '-native-draft');
         await this.openShareSheet(label);
         return { previewPath: preview.file, previewSha256: createHash('sha256').update(preview.png).digest('hex') };
@@ -234,6 +236,25 @@ export class WdaStoryDriver extends InstagramRelease {
         await this.tapElement('accessibility id', 'text-entry-done-button', 'Text Done');
         await this.waitFor('accessibility id', 'add-text-button', 'Story editor after text', 15_000);
         if (await typed() !== text) throw new Error('Story text changed after Done');
+    }
+
+    /** Link sticker mapped live on 2026-10-15: Stickers > link-sticker-tray-cell > Add link (URL, Sticker text) > Done.
+     * Readback: the editor holds one "Link Sticker <url>" element. Suggested-audio popups are dismissed first. */
+    private async addLinkSticker(url: string, text?: string) {
+        if (await this.visible('accessibility id', 'Dismiss suggested music')) await this.tapElement('accessibility id', 'Dismiss suggested music', 'Dismiss suggested music');
+        await this.tapElement('accessibility id', 'add-stickers-button', 'Stickers');
+        await this.tapElement('accessibility id', 'link-sticker-tray-cell', 'Link sticker', 15_000);
+        const field = await this.waitFor('predicate string', '(name == "URL" OR label == "URL") AND visible == 1', 'Link URL field', 15_000);
+        await this.request(`${this.session}/element/${field}/value`, { value: [url] });
+        if (text) {
+            const st = await this.waitFor('predicate string', '(name == "Sticker text" OR label == "Sticker text") AND visible == 1', 'Sticker text field', 8_000);
+            await this.request(`${this.session}/element/${st}/click`, {});
+            await this.request(`${this.session}/element/${st}/value`, { value: [text] });
+        }
+        await this.tapElement('predicate string', '(name == "Done" OR label == "Done") AND visible == 1', 'Link Done');
+        await this.waitFor('accessibility id', 'add-text-button', 'Story editor after link', 15_000);
+        const stickers = (await this.request(this.session + '/elements', { using: 'predicate string', value: `name BEGINSWITH "Link Sticker ${url}" AND visible == 1` })).value as unknown[];
+        if (stickers.length !== 1) throw new Error('Link sticker readback failed');
     }
 
     private async openShareSheet(label: string) {

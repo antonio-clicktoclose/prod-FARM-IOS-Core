@@ -6,10 +6,10 @@ import { publishingCadence } from './cadence.js';
 export const storySchedule = {
     owner: 'phone_farm_worker', timezone: publishingCadence.timezone, cron: publishingCadence.storyCron,
     times: publishingCadence.storyTimes, sequencesPerDay: publishingCadence.storySequencesPerDay,
-    enabled: true, publicationEnabled: false, planningDays: 3, preparationLeadHours: 24,
+    enabled: true, publicationEnabled: false, planningDays: 7, preparationLeadHours: 24,
     nativePilotVerified: true,
     // Antonio, in chat on 2026-10-13: Stories and posting must run with no model, as repeatable scripts.
-    standingApproval: { format: 'reel_spotlight', grantedBy: 'Antonio (chat, 2026-10-13)',
+    standingApproval: { format: 'reel_spotlight', formats: ['reel_spotlight', 'lifestyle'], grantedBy: 'Antonio (chat, 2026-10-13; weekly lifestyle sequences 2026-10-15)',
         scope: 'script-built five-frame Stories from his own published feed Reels, text from that Reel caption or fixed neutral lines' },
     blockers: ['Select and review the exact photos, B-roll clips and source post.', 'Approve the actual native drafts for each new sequence.', 'Build and test the unattended publisher with per-frame claims and both platform receipts.'],
 } as const;

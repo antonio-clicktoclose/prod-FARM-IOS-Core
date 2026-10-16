@@ -1,7 +1,7 @@
 import{readFile}from'node:fs/promises';import{createHash}from'node:crypto';import path from'node:path';import type{Pool}from'pg';
 import{NativeStoryStore,nativeStoryRevision,type NativeStoryFrame}from'./mirroring-stories.js';
 import{DirectMediaStore}from'./direct-media.js';import{NativeMuteGuard}from'./native-mute.js';import{loadRegisteredDevices}from'../devices/registry.js';
-import{WdaStoryDriver}from'./wda-story-driver.js';import{ensureSpotlightPlans}from'./story-spotlight.js';import{storySchedule}from'./story-schedule.js';import{reviewStoryDraft}from'./story-policy.js';
+import{WdaStoryDriver}from'./wda-story-driver.js';import{ensureWeekPlans}from'./story-lifestyle.js';import{storySchedule}from'./story-schedule.js';import{reviewStoryDraft}from'./story-policy.js';
 // Story code only. Video driver changes do not invalidate an approved Story; Story driver changes need a new pilot.
 const storySources=['src/publishing/wda-stories.ts','src/publishing/wda-story-driver.ts','src/publishing/story-receipts.ts','src/publishing/mirroring-stories.ts','src/publishing/story-policy.ts'];
 export async function directStoryFingerprint(){const h=createHash('sha256');for(const p of storySources)h.update(await readFile(p));return h.digest('hex');}
@@ -18,7 +18,7 @@ export async function storyFramesFromPlan(draft:any):Promise<NativeStoryFrame[]>
  const frames:NativeStoryFrame[]=[];
  for(const f of draft.frames){
   const sha256=createHash('sha256').update(await readFile(f.assetRef)).digest('hex');
-  frames.push({text:f.text,assetRef:f.assetRef,sourceSha256:sha256,sourcePath:f.assetRef,media:{path:f.assetRef,name:path.basename(f.assetRef),mimeType:'image/png',sha256},previewPath:'',previewSha256:''});
+  frames.push({text:f.text,textBurnedIn:f.textBurnedIn===true,linkUrl:f.linkUrl,linkText:f.linkText,assetRef:f.assetRef,sourceSha256:sha256,sourcePath:f.assetRef,media:{path:f.assetRef,name:path.basename(f.assetRef),mimeType:'image/png',sha256},previewPath:'',previewSha256:''});
  }
  return frames;
 }
@@ -61,7 +61,7 @@ async function captureNextDraft(pool:Pool){
   WHERE story_draft_captures.state='failed' AND story_draft_captures.attempts<3 RETURNING sequence_id`,[row.id]);
  if(!claimed.rowCount)return;
  try{const r=await captureDirectStoryDraft(pool,row.id);await pool.query(`UPDATE scheduler.story_draft_captures SET state='captured',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify(r)]);
-  if(row.draft?.format===storySchedule.standingApproval.format)await approveUnderStandingApproval(pool,r.id,r.revision);}
+  if((storySchedule.standingApproval.formats as readonly string[]).includes(row.draft?.format))await approveUnderStandingApproval(pool,r.id,r.revision);}
  catch(e){const msg=e instanceof Error?e.message:String(e);
   // Another phone job held the lock: nothing ran, so this is not an attempt. Try again on a later tick.
   if(msg==='Phone busy'||/video release is due soon/.test(msg))await pool.query(`UPDATE scheduler.story_draft_captures SET state='failed',attempts=GREATEST(attempts-1,0),result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify({error:msg})]);
@@ -82,6 +82,6 @@ export async function runDirectStories(pool:Pool,signal:AbortSignal){
   WHERE state='armed' AND fingerprint<>$1 AND sequence_id IN(SELECT id FROM scheduler.story_sequences WHERE run_at<=now())`,[s.fingerprint]);
  if(await storyBlockedByVideo(pool,30))return;
  await store.tick(s.fingerprint,row=>driver(pool,row,signal,path.resolve('.scheduler-data/publishing/wda-story-runs',row.id)),!s.qualified,'stories_wda');
- await ensureSpotlightPlans(pool);
+ await ensureWeekPlans(pool);
  await captureNextDraft(pool);
 }

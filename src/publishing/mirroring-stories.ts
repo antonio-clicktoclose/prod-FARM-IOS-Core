@@ -8,7 +8,8 @@ import {StorySequenceStore} from './story-sequences.js';
 import {reviewStoryDraft} from './story-policy.js';
 import type {ReleaseMedia} from './instagram-release.js';
 import type {PostingInput} from './model.js';
-export interface NativeStoryFrame {text:string;assetRef:string;sourceSha256:string;sourcePath?:string;media:ReleaseMedia;previewPath:string;previewSha256:string}
+/** textBurnedIn: the words are drawn into the image, so no native text is typed. linkUrl: a link sticker to that URL (the Reel). */
+export interface NativeStoryFrame {text:string;textBurnedIn?:boolean;linkUrl?:string;linkText?:string;assetRef:string;sourceSha256:string;sourcePath?:string;media:ReleaseMedia;previewPath:string;previewSha256:string}
 /** Any phone driver that builds one frame, claims, taps Share once and returns both destination receipts. */
 export interface StoryFrameDriver {publishFrame(frame:NativeStoryFrame,claim:()=>Promise<void>):Promise<any>;leaveVideo():Promise<void>}
 /** App receipts (Mac Mirroring flow) or Graph receipts (iPhone WDA flow), on both Instagram and Facebook. */

@@ -12,7 +12,7 @@ import sharp, { type OverlayOptions } from 'sharp';
 
 export interface PoolPhoto { file: string; sha256: string; faceTop?: number | null; t?: number }
 /** Under a proof card at the top, only photos with the face low (or not visible) keep the face clear. */
-export const cardSafe = (p: PoolPhoto) => p.faceTop == null || p.faceTop > 0.6;
+export const cardSafe = (p: PoolPhoto) => p.faceTop == null || p.faceTop > 0.7;
 const W = 1080, H = 1920, IMAGE = /\.(jpe?g|png|heic)$/i;
 
 export function loadPhotoPool(file = 'docs/stories/photo-pool.json'): PoolPhoto[] {
@@ -148,7 +148,9 @@ export async function minimalFrame(source: PoolPhoto | Buffer, text: string, { c
         cardBottom = top + m.height!;
     }
     // Words sit right under the card on proof frames (as in the Highlights), and in the upper third otherwise.
-    const lines = wrapLines(text, 26).slice(0, 2), size = 60, base = cardBottom ? cardBottom + 190 : 380;
+    const lines = wrapLines(text, 26), size = 60;
+    if (lines.length > 3) throw Error(`Story text is longer than three lines: ${text}`);
+    const base = cardBottom ? cardBottom + 190 : 380;
     // One clean red arrow from beside the words up to the card's right edge.
     const arrowSvg = cardBottom ? (() => {
         // Curved arrow: tail beside the words, tip just under the card's right column (where the result is).
@@ -163,4 +165,84 @@ export async function minimalFrame(source: PoolPhoto | Buffer, text: string, { c
         + arrowSvg + lines.map((l, i) => `<text x="${W / 2}" y="${base + i * size * 1.22}" font-family="SF Pro Display, Helvetica Neue, Helvetica, Arial" font-weight="700" font-size="${size}" text-anchor="middle" fill="#fff" filter="url(#s)">${esc(l)}</text>`).join('') + '</svg>';
     layers.push({ input: Buffer.from(svg) });
     return sharp(bg).composite(layers).removeAlpha().png().toBuffer();
+}
+
+/** Recent published Instagram Reels (Trial included: the link sticker opens the Reel directly), newest first, with how many
+ * Story plans already linked each one. */
+async function linkableReels(pool: import('pg').Pool) {
+    return (await pool.query(`SELECT i.id,i.input->>'caption' caption,r.result->'receipts'->'instagram'->>'url' url,
+        (SELECT count(*) FROM scheduler.story_sequences s WHERE s.state<>'cancelled' AND s.draft->>'sourceReelId'=i.id::text)::int uses
+        FROM scheduler.publishing_items i JOIN scheduler.publishing_releases r ON r.item_id=i.id
+        WHERE i.status='published' AND i.input->'targets' @> '[{"platform":"instagram"}]' AND r.result->'receipts'->'instagram'->>'verified'='true'
+        AND r.result->'receipts'->'instagram'->>'url' ~ '^https://www\\.instagram\\.com/reel/[A-Za-z0-9_-]+/?$' AND r.updated_at > now()-interval '10 days'
+        ORDER BY r.updated_at DESC LIMIT 40`)).rows as { id: string; caption: string; url: string; uses: number }[];
+}
+
+/** When each pool picture was last used in a Story plan (from the saved plans, so it survives restarts). */
+async function photoLastUse(pool: import('pg').Pool): Promise<Map<string, number>> {
+    const rows = (await pool.query(`SELECT s.run_at, f->>'photoSha256' sha FROM scheduler.story_sequences s, jsonb_array_elements(s.draft->'frames') f
+        WHERE s.state<>'cancelled' AND s.draft->>'format'='lifestyle'`)).rows;
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.sha, Math.max(m.get(r.sha) ?? 0, new Date(r.run_at).getTime()));
+    return m;
+}
+
+/** One five-frame lifestyle plan for a slot: words from a recent Reel's caption, two proof cards, a link sticker to that
+ * Reel on the last frame. Pictures rotate least recently used and must pass the quality gate. Never touches the phone. */
+export async function buildLifestylePlan(pool: import('pg').Pool, runAt: Date, { spotlightTexts }: { spotlightTexts: (c: string) => string[] }) {
+    const reels = await linkableReels(pool);
+    if (!reels.length) return null;
+    const reel = [...reels].sort((a, b) => a.uses - b.uses)[0]!;
+    const t = spotlightTexts(reel.caption ?? ''), keyword = t[4]?.match(/^Comment (\S+) /)?.[1];
+    const cards = loadProofCards(), lastUse = await photoLastUse(pool), all = loadPhotoPool();
+    const slotIndex = Math.floor(runAt.getTime() / (12 * 3_600_000));
+    const card = cards[slotIndex % cards.length]!;
+    const used = new Set<string>(), pick = async (filter: (p: PoolPhoto) => boolean) => {
+        for (const p of pickPhotos(all.filter(p => filter(p) && !used.has(p.sha256)), lastUse, Math.min(12, all.length)))
+            if ((await imageQuality(await photoBuffer(p.file, p.t))).ok) { used.add(p.sha256); return p; }
+        throw Error('No picture passed the quality gate');
+    };
+    // One thought per Story: the Reel's three lines, then one proof card as Antonio's own work, then the keyword and link.
+    const fits = (l: string) => wrapLines(l, 26).length <= 3;
+    const lines = t.slice(0, 4).map(l => l.trim()).filter(l => l && fits(l)).slice(0, 3);
+    while (lines.length < 3) lines.push(['The full breakdown is in the reel.', 'Watch it to the end.'][lines.length - 1] ?? 'Watch it to the end.');
+    const plan = [
+        { photo: await pick(() => true), text: lines[0]! },
+        { photo: await pick(() => true), text: lines[1]! },
+        { photo: await pick(() => true), text: lines[2]! },
+        { photo: await pick(cardSafe), text: card.headline, card },
+        { photo: await pick(() => true), text: keyword ? `Comment ${keyword} on the reel` : 'Watch the full reel', link: true },
+    ];
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(runAt);
+    const dir = path.resolve('.scheduler-data/story-assets', `${date}-lifestyle-${runAt.toISOString().slice(11, 13)}`);
+    await (await import('node:fs/promises')).mkdir(dir, { recursive: true, mode: 0o700 });
+    const frames = [];
+    for (const [i, f] of plan.entries()) {
+        const file = path.join(dir, `frame-${i + 1}.png`);
+        await (await import('node:fs/promises')).writeFile(file, await minimalFrame(f.photo, f.text, { card: f.card }), { mode: 0o600 });
+        frames.push({ stage: ['hook', 'point', 'point', 'proof', 'reply'][i], text: f.text, textBurnedIn: true, assetKind: 'lifestyle_frame', assetRef: file,
+            photoSha256: f.photo.sha256, automatedChecks: true, claimReview: 'source_checked', sourceRef: f.card ? f.card.source : reel.url,
+            ...(f.card ? { proofCard: f.card.file } : {}), ...(f.link ? { linkUrl: reel.url } : {}) });
+    }
+    const draft = { policyVersion: 2, format: 'lifestyle', nativeText: true, musicStyle: 'music_only', sourceReelId: reel.id, frames };
+    const { reviewStoryDraft } = await import('./story-policy.js');
+    const review = reviewStoryDraft(draft);
+    if (!review.valid) throw Error('Lifestyle plan failed review: ' + review.errors.join(' '));
+    const base = `lifestyle-${runAt.toISOString().replace(/[:.]/g, '-')}`;
+    const builds = Number((await pool.query(`SELECT count(*) n FROM scheduler.story_sequences WHERE request_id LIKE $1`, [base + '%'])).rows[0].n);
+    const { StorySequenceStore } = await import('./story-sequences.js');
+    return new StorySequenceStore(pool).save({ requestId: builds ? `${base}-${builds + 1}` : base, title: 'Lifestyle: ' + t[0]!.slice(0, 110),
+        deviceUdid: '00008130-000229EE1AA0001C', account: 'antoniorevenue', facebookAccount: '61584693917444', runAt: runAt.toISOString(), draft });
+}
+
+/** Weekly batch (Antonio, Oct 15: "every week we build the full week worth of story sequences"): every Story slot from 1 hour
+ * to 7 days ahead without a plan gets a lifestyle plan. Draft capture on the phone still happens the day before. */
+export async function ensureWeekPlans(pool: import('pg').Pool) {
+    const { spotlightTexts } = await import('./story-spotlight.js');
+    const slots = (await pool.query(`SELECT d.run_at FROM scheduler.story_daily_slots d WHERE d.run_at > now()+interval '1 hour' AND d.run_at < now()+interval '7 days'
+        AND NOT EXISTS(SELECT 1 FROM scheduler.story_sequences s WHERE s.run_at=d.run_at AND s.state<>'cancelled') ORDER BY d.run_at`)).rows;
+    for (const s of slots) {
+        try { await buildLifestylePlan(pool, new Date(s.run_at), { spotlightTexts }); }
+        catch (error) { console.error(new Date().toISOString(), 'Story lifestyle plan failed:', error instanceof Error ? error.message : error); }
+    }
 }

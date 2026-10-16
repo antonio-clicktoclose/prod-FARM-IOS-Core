@@ -6,7 +6,7 @@ export const storyPolicy = {
     distinctImagesRequired: 5, // Legacy version 1
     distinctAssetsRequired: 5,
     supportedVersions: [1, 2],
-    formats: ['proof_led', 'post_led', 'reel_spotlight'],
+    formats: ['proof_led', 'post_led', 'reel_spotlight', 'lifestyle'],
     musicStyle: 'music_only',
     publication: 'approval_required',
     automaticPublishingReady: false,
@@ -18,6 +18,7 @@ export function reviewStoryDraft(value: unknown) {
     if (!draft || typeof draft !== 'object') return { valid: false, errors: ['A Story draft is required.'], policyVersion: 1 };
     const v2 = draft.policyVersion === 2;
     if (v2 && draft.format === 'reel_spotlight') return reviewSpotlight(draft);
+    if (v2 && draft.format === 'lifestyle') return reviewLifestyle(draft);
     if (![1, 2].includes(draft.policyVersion)) errors.push('Use Story policy version 1 or 2.');
     if (v2 && !['proof_led', 'post_led'].includes(draft.format)) errors.push('Choose proof_led or post_led format.');
     const stages = v2 && draft.format === 'post_led' ? ['problem', 'mechanism', 'post', 'lesson', 'reply'] : storyPolicy.stages;
@@ -64,5 +65,28 @@ function reviewSpotlight(draft: any) {
         if (typeof f.text !== 'string' || !f.text.trim() || f.text.trim().split(/\s+/).length > 45 || f.text.length > 300) errors.push(`Frame ${i + 1} needs 1 to 45 words.`);
         if (f.assetKind !== 'reel_frame' || f.automatedChecks !== true || f.claimReview !== 'source_checked') errors.push(`Frame ${i + 1} needs an automated-checked Reel frame.`);
     }
+    return { valid: errors.length === 0, errors, policyVersion: draft.policyVersion, publicationAllowed: false };
+}
+
+/** Weekly lifestyle sequence (Antonio, Oct 15 2026): five of his approved photos or video stills with words drawn in,
+ * two real proof cards, and a link sticker to one of his own Reels on the last frame. Script-built, no model. */
+function reviewLifestyle(draft: any) {
+    const errors: string[] = [], frames = Array.isArray(draft.frames) ? draft.frames : [];
+    const reel = /^https:\/\/(www\.)?instagram\.com\/reel\/[A-Za-z0-9_-]+\/?$/;
+    if (draft.musicStyle !== 'music_only') errors.push('Use background music without a visible sticker.');
+    if (frames.length !== 5) errors.push('Include all five frames for the selected format.');
+    const refs = frames.map((f: any) => typeof f?.assetRef === 'string' ? f.assetRef.trim() : '');
+    if (new Set(refs).size !== 5 || refs.some((r: string) => !r)) errors.push('Use five different reviewed assets, one for each frame. Different filenames for the same image do not count.');
+    const photos = new Set(frames.map((f: any) => f?.photoSha256));
+    if (photos.size !== 5 || photos.has(undefined)) errors.push('Each frame needs a different source photo.');
+    for (const [i, f] of frames.entries()) {
+        if (f?.assetKind !== 'lifestyle_frame' || f.automatedChecks !== true || f.textBurnedIn !== true) errors.push(`Frame ${i + 1} needs an automated-checked lifestyle frame with its words drawn in.`);
+        if (typeof f?.text !== 'string' || !f.text.trim() || f.text.trim().split(/\s+/).length > 30) errors.push(`Frame ${i + 1} needs 1 to 30 words.`);
+        if (f?.claimReview !== 'source_checked' || typeof f.sourceRef !== 'string' || !f.sourceRef) errors.push(`Frame ${i + 1} needs its text source.`);
+    }
+    if (frames.filter((f: any) => f?.proofCard).length < 1) errors.push('Include at least one real proof card.');
+    const last = frames[4];
+    if (!last || typeof last.linkUrl !== 'string' || !reel.test(last.linkUrl)) errors.push('The last frame needs a link sticker to one of our Reels.');
+    if (frames.slice(0, 4).some((f: any) => f?.linkUrl)) errors.push('Only the last frame carries the Reel link.');
     return { valid: errors.length === 0, errors, policyVersion: draft.policyVersion, publicationAllowed: false };
 }
