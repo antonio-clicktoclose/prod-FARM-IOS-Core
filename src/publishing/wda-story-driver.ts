@@ -51,6 +51,17 @@ export function storyAddBadgePoint(xml: string): { x: number; y: number } {
     return { x: Math.round(badges[0]!.x + badges[0]!.w / 2), y: Math.round(badges[0]!.y + badges[0]!.h / 2) };
 }
 
+/** Break Story overlay text into centred lines of at most `max` characters (whole words; a longer word keeps its line). */
+export function wrapStoryText(text: string, max = 20): string {
+    const lines: string[] = [];
+    for (const word of text.trim().split(/\s+/)) {
+        const last = lines[lines.length - 1];
+        if (last !== undefined && (last + ' ' + word).length <= max) lines[lines.length - 1] = last + ' ' + word;
+        else lines.push(word);
+    }
+    return lines.join('\n');
+}
+
 /** The exact approved track row in the audio browser. Returns the point that opens its editor (the subtitle line;
  * the title button only plays a preview). */
 export function storyTrackPoint(xml: string): { x: number; y: number } {
@@ -235,7 +246,9 @@ export class WdaStoryDriver extends InstagramRelease {
         if (await this.visible('predicate string', 'name BEGINSWITH "music-sticker" AND visible == 1')) throw new Error('A visible music sticker was added');
     }
 
-    private async addText(text: string) {
+    private async addText(raw: string) {
+        // Oct 17: "Comment COMMUNITY on the reel" ran under Instagram's right-edge buttons. Short centred lines stay clear.
+        const text = wrapStoryText(raw);
         await this.tapElement('accessibility id', 'add-text-button', 'Text button');
         await this.waitFor('predicate string', 'type == "XCUIElementTypeTextView" AND name == "Text on your story" AND visible == 1', 'Story text entry', 15_000);
         await this.request(this.session + '/wda/keys', { value: [text] });
