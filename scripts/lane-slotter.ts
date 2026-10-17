@@ -21,11 +21,14 @@ try{
  const now=Date.now(),t=(r:any)=>new Date(r.run_at).getTime();
  const fixed=(r:any)=>r.state!=='armed'||!!r.share_claimed_at||t(r)<now+10*minute;
  const slotOf=(r:any)=>Math.round((t(r)-(laneOf(r.input)==='youtube'?cadence.youtubeOffsetMinutes*minute:0))/hour)*hour;
- const from=now+30*minute;
+ // Oct 17: this was now+30 min while posts more than 10 min out were movable, so the :22 Short (17 min out at the
+ // hourly :05 run) was pushed an hour later every hour and never posted. Fill from the same 10-minute line.
+ const from=now+10*minute;
  for(const lane of ['instagram','tiktok','youtube'] as const){
   const mine=rows.filter(r=>laneOf(r.input)===lane);
   const taken=new Set(mine.filter(r=>fixed(r)&&(r.state!=='needs_review'||r.share_claimed_at)).map(slotOf));
-  const grid=slotsFrom(from,hoursOf[lane]).filter(s=>!taken.has(s));
+  // A Short's slot is judged by its real post time (slot + 22 min), not the top of the hour.
+  const grid=slotsFrom(from-(lane==='youtube'?cadence.youtubeOffsetMinutes*minute:0),hoursOf[lane]).filter(s=>!taken.has(s));
   // Fresh videos first; approved reposts (repost-filler.ts) only take slots no new video needs.
   const queue=mine.filter(r=>!fixed(r)).sort((a,b)=>Number(!!a.results?.repost)-Number(!!b.results?.repost)||t(a)-t(b)||String(a.created_at).localeCompare(String(b.created_at)));
   queue.forEach((r,n)=>{if(!grid[n])throw Error(`No free ${lane} slot in 30 days`);});
