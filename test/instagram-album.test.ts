@@ -2,8 +2,11 @@ import test from'node:test';import assert from'node:assert/strict';import{Instag
 test('Instagram never falls back to newest media when its album is missing or ambiguous',async()=>{
  for(const rows of [[],[{ELEMENT:'a'},{ELEMENT:'b'}]]){
   const d:any=new InstagramRelease('http://unused',new AbortController().signal),touches:string[]=[];
+  // Oct 17: a missing album is searched by exact name first; a search with no result still never taps a video.
   d.visible=async()=>null;d.tapElement=async()=>{touches.push('album-menu')};d.request=async()=>({value:rows});d.tapPoint=async()=>touches.push('video');
-  await assert.rejects(d.selectUploadAlbum('PF-123456789abc'),/missing or ambiguous/);assert.deepEqual(touches,['album-menu','album-menu']);
+  d.waitFor=async()=>'field';
+  await assert.rejects(d.selectUploadAlbum('PF-123456789abc'),rows.length?/missing or ambiguous/:/not on the phone/);
+  assert.ok(!touches.includes('video'));
  }
 });
 test('Instagram reveals one exact album and requires its selected header',async()=>{
