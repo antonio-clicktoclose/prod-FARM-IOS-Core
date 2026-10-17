@@ -1,3 +1,4 @@
+import {scoreStory} from './story-score.js';
 import{readFile}from'node:fs/promises';import{createHash}from'node:crypto';import path from'node:path';import type{Pool}from'pg';
 import{NativeStoryStore,nativeStoryRevision,type NativeStoryFrame}from'./mirroring-stories.js';
 import{DirectMediaStore}from'./direct-media.js';import{NativeMuteGuard}from'./native-mute.js';import{loadRegisteredDevices}from'../devices/registry.js';
@@ -61,11 +62,20 @@ async function captureNextDraft(pool:Pool){
   WHERE story_draft_captures.state='failed' AND story_draft_captures.attempts<3 RETURNING sequence_id`,[row.id]);
  if(!claimed.rowCount)return;
  try{const r=await captureDirectStoryDraft(pool,row.id);await pool.query(`UPDATE scheduler.story_draft_captures SET state='captured',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify(r)]);
-  if((storySchedule.standingApproval.formats as readonly string[]).includes(row.draft?.format))await approveUnderStandingApproval(pool,r.id,r.revision);}
+  // Oct 17: score every captured Story with the vision model plus on-device text check; a failing Story never auto-approves.
+  const score=await scoreCapturedStory(pool,r.id,row).catch(e=>({pass:false,reasons:['score error: '+(e instanceof Error?e.message:String(e))]}));
+  if(score.pass&&(storySchedule.standingApproval.formats as readonly string[]).includes(row.draft?.format))await approveUnderStandingApproval(pool,r.id,r.revision);}
  catch(e){const msg=e instanceof Error?e.message:String(e);
   // Another phone job held the lock: nothing ran, so this is not an attempt. Try again on a later tick.
   if(msg==='Phone busy'||/video release is due soon/.test(msg))await pool.query(`UPDATE scheduler.story_draft_captures SET state='failed',attempts=GREATEST(attempts-1,0),result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify({error:msg})]);
   else await pool.query(`UPDATE scheduler.story_draft_captures SET state='failed',result=$2 WHERE sequence_id=$1`,[row.id,JSON.stringify({error:msg})]);}
+}
+async function scoreCapturedStory(pool:Pool,jobId:string,row:any){
+ const store=new NativeStoryStore(pool);
+ const frames=await Promise.all([1,2,3,4,5].map(f=>store.preview(jobId,f)));
+ const score=await scoreStory(frames,String(row.title??''),(row.draft?.frames??[]).map((f:any)=>String(f.text??'')));
+ await pool.query(`UPDATE scheduler.mirroring_story_jobs SET result=result||jsonb_build_object('qualityScore',$2::jsonb) WHERE id=$1`,[jobId,JSON.stringify(score)]);
+ return score;
 }
 /** Antonio's standing approval (Oct 13, 2026) covers script-built spotlights of his own published feed Reels only.
  * The native previews are still captured and kept. Until the WDA flow holds a pilot certificate, the job runs as the pilot. */
