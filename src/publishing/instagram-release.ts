@@ -118,7 +118,8 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         await this.selectUploadAlbum(imported.albumName);
         const cellLabel = await this.read('accessibility id','gallery-video-cell-0','label','Exact album video');
         const cell=parseGalleryCell(cellLabel);
-        if(!cell||cell.seconds!==Math.floor(seconds)||await this.visible('accessibility id','gallery-video-cell-1'))throw Error('Dedicated Instagram album does not contain the exact single clip');
+        // Oct 17: the label read 0:54 for a 55.02 s clip (the tile showed 0:55). Allow one second of rounding either way.
+        if(!cell||Math.abs(cell.seconds-Math.floor(seconds))>1||await this.visible('accessibility id','gallery-video-cell-1'))throw Error('Dedicated Instagram album does not contain the exact single clip');
         await this.tapElement('accessibility id','gallery-video-cell-0','Exact imported video');
         // Instagram can keep multi-select on: the tap only selects the clip and shows a gallery Next bar.
         // Continue through it only when exactly that one clip is selected.
@@ -191,6 +192,9 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         if(!await this.visible('accessibility id','menu-item-All albums'))await this.tapElement('predicate string','type == "XCUIElementTypeCell" AND name BEGINSWITH "Gallery Selection," AND visible == 1','Upload album menu');
         await this.tapElement('accessibility id','menu-item-All albums','All source albums');
         const rows=(await this.request(this.session+'/elements',{using:'accessibility id',value:albumName})).value;
+        // Oct 17 (iOS 27): the All albums row loads lazily, so an album imported a day earlier may not be in the tree.
+        // Search for the exact PF- name instead, as the Story driver does (a4d2734); no result means it is not on the phone.
+        if(rows.length===0)return this.searchUploadAlbum(albumName);
         if(rows.length!==1)throw Error('Exact Instagram album is missing or ambiguous; no fallback to Recents');
         const id=this.id(rows[0]);
         if(!(await this.request(this.session+'/element/'+id+'/displayed')).value)await this.request(this.session+'/wda/element/'+id+'/scrollTo',{},30000);
@@ -210,6 +214,21 @@ export class InstagramRelease extends WdaApp implements ReleaseDriver {
         if(r.y<100||r.y+r.height>880||r.x<0||r.x+r.width>430)throw Error('Instagram source album is outside the visible list');
         await this.tapPoint(r.x+r.width/2,r.y+r.height/2);
         await this.waitFor('predicate string','type == "XCUIElementTypeCell" AND name == "Gallery Selection, '+albumName+' selected" AND visible == 1','Selected source album');
+    }
+
+    private async searchUploadAlbum(albumName:string){
+        await this.tapElement('predicate string','(label == "Search" OR name == "Search") AND visible == 1','Album search',15_000);
+        const field=await this.waitFor('accessibility id','search-text-input','Album search field',15_000);
+        await this.request(`${this.session}/element/${field}/value`,{value:[albumName]});
+        const cell=`type == "XCUIElementTypeCell" AND name BEGINSWITH "${albumName}, " AND visible == 1`;
+        await this.waitFor('predicate string',cell,'Album search result',10_000).catch(()=>undefined);
+        const hits=(await this.request(this.session+'/elements',{using:'predicate string',value:cell})).value as unknown[];
+        if(hits.length===0)throw Error('Exact Instagram album is not on the phone (album search found nothing); no fallback to Recents');
+        const names=await Promise.all(hits.map(async h=>String((await this.request(this.session+'/element/'+this.id(h as any)+'/attribute/name')).value)));
+        if(names.some(n=>n!==`${albumName}, 1 items`&&n!==`${albumName}, 1 item`))throw Error('Exact Instagram album is ambiguous; no fallback to Recents');
+        const r=(await this.request(this.session+'/element/'+this.id(hits[0] as any)+'/rect')).value;
+        await this.tapPoint(r.x+r.width/2,r.y+Math.min(r.height/2,100));
+        await this.waitFor('predicate string','type == "XCUIElementTypeCell" AND name == "Gallery Selection, '+albumName+' selected" AND visible == 1','Selected source album',15_000);
     }
 
     protected async selectRelatedReel(related:NonNullable<PostingInput['instagramRelatedReel']>) {
