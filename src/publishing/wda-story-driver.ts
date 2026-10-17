@@ -208,9 +208,18 @@ export class WdaStoryDriver extends InstagramRelease {
         const style = 'type == "XCUIElementTypeCell" AND name == "music only" AND visible == 1';
         for (let tap = 0; tap < 2 && !await this.visible('predicate string', style); tap++) {
             let point: { x: number; y: number } | undefined;
-            for (const deadline = Date.now() + 15_000; !point; await this.sleep(1000)) {
+            // Oct 16 08:04: frame 2's music search was still spinning after 15 s, so the job stopped after one frame.
+            // Wait 25 s; if the results never load, clear and type the search again once, then wait 25 s more.
+            for (let retyped = false, deadline = Date.now() + 25_000; !point; await this.sleep(1000)) {
                 try { point = storyTrackPoint(String((await this.request(this.session + '/source')).value)); }
-                catch (error) { if (Date.now() >= deadline) throw error; }
+                catch (error) {
+                    if (Date.now() < deadline) continue;
+                    if (retyped) throw error;
+                    retyped = true; deadline = Date.now() + 25_000;
+                    if (await this.visible('accessibility id', 'Clear')) await this.tapElement('accessibility id', 'Clear', 'Clear audio search');
+                    const field = await this.waitFor('accessibility id', 'search-text-input', 'Audio search', 8_000);
+                    await this.request(`${this.session}/element/${field}/value`, { value: [STORY_TRACK.search] });
+                }
             }
             await this.tapPoint(point.x, point.y);
             await this.waitFor('predicate string', style, 'Music only style', 4_000).catch(() => undefined);
