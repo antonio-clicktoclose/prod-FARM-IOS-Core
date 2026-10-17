@@ -9,7 +9,9 @@ export const storySchedule = {
     enabled: true, publicationEnabled: false, planningDays: 7, preparationLeadHours: 24,
     nativePilotVerified: true,
     // Antonio, in chat on 2026-10-13: Stories and posting must run with no model, as repeatable scripts.
-    standingApproval: { format: 'reel_spotlight', formats: ['reel_spotlight', 'lifestyle'], grantedBy: 'Antonio (chat, 2026-10-13; weekly lifestyle sequences 2026-10-15)',
+    // Oct 17 (Antonio): "Before you publish the story sequences I'd like you to review them with me here." Standing
+    // approval is suspended: no format auto-approves. Drafts are still captured and wait for review.
+    standingApproval: { format: 'reel_spotlight', formats: [] as string[], grantedBy: 'Antonio (chat, 2026-10-13; weekly lifestyle sequences 2026-10-15)',
         scope: 'script-built five-frame Stories from his own published feed Reels, text from that Reel caption or fixed neutral lines' },
     blockers: ['Select and review the exact photos, B-roll clips and source post.', 'Approve the actual native drafts for each new sequence.', 'Build and test the unattended publisher with per-frame claims and both platform receipts.'],
 } as const;
