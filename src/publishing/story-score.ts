@@ -37,10 +37,12 @@ function near(a:string,b:string){if(a===b)return true;if(a.length<4||Math.abs(a.
  * band with Apple Vision OCR (crop, enlarge, keep bright pixels, invert) and count how many planned words are really there. */
 export async function textCoverage(frame:Buffer,expected:string){
     const want=words(expected);if(!want.length)return {score:10,found:''};
-    const m=await sharp(frame).metadata();
-    const band=await sharp(frame).extract({left:0,top:Math.round(m.height!*0.06),width:m.width!,height:Math.round(m.height!*0.80)}).resize({width:m.width!*2}).grayscale().threshold(235).negate().png().toBuffer();
-    const got=words((await recognizeWords(band)).map(w=>w.text).join(' '));
-    const hit=want.filter(w=>got.some(g=>near(w,g))).length;
+    const m=await sharp(frame).metadata(),H=m.height!,Wd=m.width!;
+    // Several reads, best kept (Oct 17: keeping only bright pixels turned palm leaves into noise and hid a clear CTA).
+    const crop=(t:number,h:number)=>sharp(frame).extract({left:0,top:Math.round(H*t),width:Wd,height:Math.round(H*h)}).resize({width:Wd*2}).grayscale();
+    const reads=[crop(0.06,0.40).png(),crop(0.06,0.40).threshold(235).negate().png(),crop(0.06,0.80).threshold(235).negate().png(),crop(0.06,0.80).normalise().png()];
+    let got:string[]=[],hit=-1;
+    for(const r of reads){const g=words((await recognizeWords(await r.toBuffer())).map(w=>w.text).join(' '));const h=want.filter(w=>g.some(x=>near(w,x))).length;if(h>hit){hit=h;got=g;}if(h===want.length)break;}
     return {score:Math.round(10*hit/want.length),found:got.join(' ').slice(0,160)};
 }
 

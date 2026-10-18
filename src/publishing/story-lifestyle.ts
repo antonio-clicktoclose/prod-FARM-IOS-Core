@@ -187,52 +187,110 @@ async function photoLastUse(pool: import('pg').Pool): Promise<Map<string, number
     return m;
 }
 
-/** One five-frame lifestyle plan for a slot: words from a recent Reel's caption, two proof cards, a link sticker to that
- * Reel on the last frame. Pictures rotate least recently used and must pass the quality gate. Never touches the phone. */
-export async function buildLifestylePlan(pool: import('pg').Pool, runAt: Date, { spotlightTexts }: { spotlightTexts: (c: string) => string[] }) {
+/** Journal frame (Oct 17, modelled on Nik Setting and SooWei Goh): the full-colour picture, a soft dark band at the top and
+ * 2 to 5 short lowercase lines, left-aligned, like a note written on the photo. Proof frames put the real screenshot under
+ * the words. Text stays inside x 80..860 so it never reaches Instagram's right-edge buttons. */
+export async function journalFrame(source: PoolPhoto | Buffer, text: string, { card }: { card?: ProofCard } = {}): Promise<Buffer> {
+    const raw = Buffer.isBuffer(source) ? source : await photoBuffer(source.file, source.t);
+    const bg = await sharp(raw, { failOn: 'none' }).rotate().resize(W, H, { fit: 'cover', position: 'attention' })
+        .modulate({ saturation: 1.1, brightness: 1.06 }).toBuffer();
+    const size = 50, step = Math.round(size * 1.3), lines = text.split('\n').flatMap(l => wrapLines(l, 30));
+    if (lines.length > 6) throw Error(`Story text is longer than six lines: ${text}`);
+    const top = 300, textBottom = top + (lines.length - 1) * step + 20;
+    const band = `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0.62"/>`
+        + `<stop offset="0.75" stop-color="#000" stop-opacity="0.38"/><stop offset="1" stop-color="#000" stop-opacity="0"/></linearGradient>`
+        + `<filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000" flood-opacity="0.6"/></filter></defs>`
+        + `<rect x="0" y="0" width="${W}" height="${textBottom + 220}" fill="url(#g)"/>`;
+    const words = lines.map((l, i) => `<text x="80" y="${top + i * step}" font-family="SF Pro Display, Helvetica Neue, Helvetica, Arial" font-weight="700" font-size="${size}" fill="#fff" filter="url(#s)">${esc(l)}</text>`).join('');
+    const layers: OverlayOptions[] = [{ input: Buffer.from(`<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">${band}${words}</svg>`) }];
+    if (card) {
+        const img = await sharp(card.file).resize(920, 700, { fit: 'inside' }).png().toBuffer(), m = await sharp(img).metadata();
+        const mask = Buffer.from(`<svg width="${m.width}" height="${m.height}"><rect width="${m.width}" height="${m.height}" rx="22" fill="#fff"/></svg>`);
+        layers.push({ input: await sharp(img).composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer(), left: Math.round((W - m.width!) / 2), top: textBottom + 70 });
+    }
+    return sharp(bg).composite(layers).removeAlpha().png().toBuffer();
+}
+
+/** The Reel caption's own sentences, original casing (lowercasing broke names like Claude Code). No filler. */
+export function captionSentences(caption: string): string[] {
+    const clean = (x: string) => x.replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '').replace(/^\s*(\d+[.)]|[-•*])\s*/, '').replace(/\s+/g, ' ').trim();
+    const out = caption.split('\n').map(clean).filter(l => l && !l.startsWith('#') && !/^follow @/i.test(l) && !/@antoniorevenue/i.test(l))
+        .flatMap(l => l.match(/[^.!?]+[.!?]*/g) ?? []).map(x => x.trim())
+        .filter(x => { const w = x.split(/\s+/).length; return w >= 3 && w <= 22 && !x.endsWith(':') && !/\bcomment\b/i.test(x) && !x.includes('#'); });
+    return [...new Set(out)];
+}
+
+export type StoryType = 'build' | 'proof_stack' | 'documentation';
+/** Rotation over the slots (Nik's build timeline and result stacking, SooWei's documentation). */
+export function storyTypeFor(runAt: Date): StoryType {
+    // One ordinal per Story slot (two a day), so consecutive slots differ: build and proof alternate, and about two slots a
+    // week are a documentation update.
+    const pt = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false }).format(runAt));
+    const ordinal = Math.floor(runAt.getTime() / 86_400_000) * 2 + (pt >= 12 ? 1 : 0);
+    return ordinal % 7 === 3 ? 'documentation' : ordinal % 2 ? 'proof_stack' : 'build';
+}
+
+/** Our own last seven days from the publishing records: real numbers for documentation Stories. */
+async function weekNumbers(pool: import('pg').Pool) {
+    const r = (await pool.query(`SELECT count(DISTINCT i.media->>'sha256') FILTER (WHERE true)::int videos, count(*)::int posts
+        FROM scheduler.publishing_releases r JOIN scheduler.publishing_items i ON i.id=r.item_id WHERE r.state='published' AND r.updated_at>now()-interval '7 days'`)).rows[0];
+    return { videos: r.videos as number, posts: r.posts as number };
+}
+
+/** One five-frame plan for a slot. Type rotates by slot. Words come only from a recent Reel's caption, our real numbers and
+ * the approved proof cards (Antonio, Oct 17: revenue screenshots are OK). The last frame links the Reel. Never touches the phone. */
+export async function buildLifestylePlan(pool: import('pg').Pool, runAt: Date, _opts: { spotlightTexts?: (c: string) => string[] } = {}) {
     const reels = await linkableReels(pool);
     if (!reels.length) return null;
-    const reel = [...reels].sort((a, b) => a.uses - b.uses)[0]!;
-    const t = spotlightTexts(reel.caption ?? ''), keyword = t[4]?.match(/^Comment (\S+) /)?.[1];
-    const cards = loadProofCards(), lastUse = await photoLastUse(pool), all = loadPhotoPool();
-    const slotIndex = Math.floor(runAt.getTime() / (12 * 3_600_000));
-    const card = cards[slotIndex % cards.length]!;
-    const used = new Set<string>(), pick = async (filter: (p: PoolPhoto) => boolean) => {
+    const usable = reels.map(r => ({ ...r, s: captionSentences(r.caption ?? '') })).filter(r => r.s.length >= 3);
+    if (!usable.length) return null;
+    const reel = [...usable].sort((a, b) => a.uses - b.uses)[0]!;
+    const keyword = (reel.caption ?? '').match(/\bComment\s+["“']?([A-Z][A-Z0-9]{1,19})["”']?/)?.[1];
+    const cta = keyword ? `Comment ${keyword} on the reel\nand I'll send it to you` : 'The full reel is on my profile';
+    const type = storyTypeFor(runAt), slotIndex = Math.floor(runAt.getTime() / (12 * 3_600_000));
+    const cards = loadProofCards(), card = (k: number) => cards[(slotIndex * 2 + k) % cards.length]!;
+    const lastUse = await photoLastUse(pool), all = loadPhotoPool(), used = new Set<string>();
+    const pick = async (filter: (p: PoolPhoto) => boolean) => {
         for (const p of pickPhotos(all.filter(p => filter(p) && !used.has(p.sha256)), lastUse, Math.min(12, all.length)))
             if ((await imageQuality(await photoBuffer(p.file, p.t))).ok) { used.add(p.sha256); return p; }
         throw Error('No picture passed the quality gate');
     };
-    // One thought per Story: the Reel's three lines, then one proof card as Antonio's own work, then the keyword and link.
-    const fits = (l: string) => wrapLines(l, 26).length <= 3;
-    const lines = t.slice(0, 4).map(l => l.trim()).filter(l => l && fits(l)).slice(0, 3);
-    while (lines.length < 3) lines.push(['The full breakdown is in the reel.', 'Watch it to the end.'][lines.length - 1] ?? 'Watch it to the end.');
-    const plan = [
-        { photo: await pick(() => true), text: lines[0]! },
-        { photo: await pick(() => true), text: lines[1]! },
-        { photo: await pick(() => true), text: lines[2]! },
-        { photo: await pick(cardSafe), text: card.headline, card },
-        // The link sticker sits mid-frame, so the last picture keeps the face low (or not visible).
-        { photo: await pick(cardSafe), text: keyword ? `Comment ${keyword} on the reel` : 'Watch the full reel', link: true },
-    ];
+    const [a, b, c] = reel.s as [string, string, string];
+    let spec: { text: string; card?: ProofCard; link?: boolean; stage: string }[];
+    if (type === 'build') spec = [
+        { stage: 'hook', text: a }, { stage: 'point', text: `Here's how it works:\n${b}` }, { stage: 'point', text: c },
+        { stage: 'proof', text: `What it did for us:\n${card(0).headline}`, card: card(0) }, { stage: 'reply', text: cta, link: true }];
+    else if (type === 'proof_stack') spec = [
+        { stage: 'hook', text: a }, { stage: 'point', text: b },
+        { stage: 'proof', text: card(0).headline, card: card(0) }, { stage: 'proof', text: card(1).headline, card: card(1) },
+        { stage: 'reply', text: cta, link: true }];
+    else { const w = await weekNumbers(pool); spec = [
+        { stage: 'hook', text: 'Quick update on the week' },
+        { stage: 'point', text: `${w.videos} videos went out this week\n${w.posts} posts across Instagram,\nTikTok and YouTube` },
+        { stage: 'proof', text: card(0).headline, card: card(0) },
+        { stage: 'point', text: `The one I keep coming back to:\n${a}` }, { stage: 'reply', text: cta, link: true }]; }
     const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(runAt);
-    const dir = path.resolve('.scheduler-data/story-assets', `${date}-lifestyle-${runAt.toISOString().slice(11, 13)}`);
-    await (await import('node:fs/promises')).mkdir(dir, { recursive: true, mode: 0o700 });
+    const dir = path.resolve('.scheduler-data/story-assets', `${date}-${type}-${runAt.toISOString().slice(11, 13)}`);
+    const fs = await import('node:fs/promises');
+    await fs.mkdir(dir, { recursive: true, mode: 0o700 });
     const frames = [];
-    for (const [i, f] of plan.entries()) {
-        const file = path.join(dir, `frame-${i + 1}.png`);
-        await (await import('node:fs/promises')).writeFile(file, await minimalFrame(f.photo, f.text, { card: f.card }), { mode: 0o600 });
-        frames.push({ stage: ['hook', 'point', 'point', 'proof', 'reply'][i], text: f.text, textBurnedIn: true, assetKind: 'lifestyle_frame', assetRef: file,
-            photoSha256: f.photo.sha256, automatedChecks: true, claimReview: 'source_checked', sourceRef: f.card ? f.card.source : reel.url,
+    for (const [i, f] of spec.entries()) {
+        // Card and link frames keep the face low or out of frame so the screenshot or sticker never covers it.
+        const photo = await pick(f.card || f.link ? cardSafe : () => true), file = path.join(dir, `frame-${i + 1}.png`);
+        await fs.writeFile(file, await journalFrame(photo, f.text, { card: f.card }), { mode: 0o600 });
+        frames.push({ stage: f.stage, text: f.text.replace(/\n/g, ' '), textBurnedIn: true, assetKind: 'lifestyle_frame', assetRef: file,
+            photoSha256: photo.sha256, automatedChecks: true, claimReview: 'source_checked', sourceRef: f.card ? f.card.source : reel.url,
             ...(f.card ? { proofCard: f.card.file } : {}), ...(f.link ? { linkUrl: reel.url } : {}) });
     }
-    const draft = { policyVersion: 2, format: 'lifestyle', nativeText: true, musicStyle: 'music_only', sourceReelId: reel.id, frames };
+    const draft = { policyVersion: 2, format: 'lifestyle', storyType: type, nativeText: true, musicStyle: 'music_only', sourceReelId: reel.id, frames };
     const { reviewStoryDraft } = await import('./story-policy.js');
     const review = reviewStoryDraft(draft);
     if (!review.valid) throw Error('Lifestyle plan failed review: ' + review.errors.join(' '));
     const base = `lifestyle-${runAt.toISOString().replace(/[:.]/g, '-')}`;
     const builds = Number((await pool.query(`SELECT count(*) n FROM scheduler.story_sequences WHERE request_id LIKE $1`, [base + '%'])).rows[0].n);
     const { StorySequenceStore } = await import('./story-sequences.js');
-    return new StorySequenceStore(pool).save({ requestId: builds ? `${base}-${builds + 1}` : base, title: 'Lifestyle: ' + t[0]!.slice(0, 110),
+    const title = `${{ build: 'Build', proof_stack: 'Proof', documentation: 'Week' }[type]}: ` + (type === 'documentation' ? 'Quick update on the week' : a).slice(0, 110);
+    return new StorySequenceStore(pool).save({ requestId: builds ? `${base}-${builds + 1}` : base, title,
         deviceUdid: '00008130-000229EE1AA0001C', account: 'antoniorevenue', facebookAccount: '61584693917444', runAt: runAt.toISOString(), draft });
 }
 
