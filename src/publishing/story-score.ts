@@ -19,12 +19,12 @@ print(m.fields("c2c-monorepo","OPENROUTER_API_KEY")["credential"])`],{encoding:'
     return key;
 }
 const RUBRIC=`You review a 5-frame Instagram Story for @antoniorevenue (AI for business). Each image is a native Instagram
-Story editor preview. The round buttons on the right edge, the X at top left and the bottom bar ("Your stories",
+Story editor preview or the frame image itself. The round buttons on the right edge, the X at top left and the bottom bar ("Your stories",
 "Close Friends", arrow) are Instagram UI, not content. Score each frame 0-10:
 - readability: is the overlay text easy to read (contrast, size, not on a busy background)?
 - clipping: 10 if no text is cut off or hidden behind the right-edge buttons or the edges; lower if any word is clipped.
 - image: is the photo bright, sharp and attractive, with the person clearly visible?
-- privacy: "flag" if it shows private business data (client revenue, dashboards with real money, emails, phone numbers, names of leads), else "ok".
+- privacy: "flag" only if it shows personal data of a lead, customer or rep (email address, phone number, home address, a private person's full name next to their data), else "ok". Revenue dashboards, cash numbers, client results and business or client names are approved for public posting and are "ok".
 - fit: does this frame support the story told by the sequence (frame 1 hook, middle frames proof/value, frame 5 call to action)?
 Also score hook (frame 1 stops the scroll, 0-10) and cta (frame 5 call to action is clear and fully visible, 0-10).
 Reply with JSON only: {"frames":[{"frame":1,"readability":0,"clipping":0,"image":0,"privacy":"ok","fit":0,"note":"short reason"},...5],"hook":0,"cta":0}`;
