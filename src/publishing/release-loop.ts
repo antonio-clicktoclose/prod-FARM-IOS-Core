@@ -144,7 +144,8 @@ export async function startReleaseLoop(pool: Pool): Promise<{ close(): Promise<v
             // Log any step that holds a tick for more than 20 s, so a starved comment queue shows its cause.
             const timed=async(step:string,run:()=>Promise<unknown>)=>{const t=Date.now();try{await run();}finally{const s=Math.round((Date.now()-t)/1000);if(s>20)console.log(new Date().toISOString(),'tick step',step,s+'s');}};
             await timed('releases',()=>store.tick(driverFor, udid => readiness.get(udid) === true, allowed));
-            await timed('stories',()=>runDirectStories(pool,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60000)])));
+            // Oct 17: a Story failure (vision-score outage, plan error) must never skip the receipt checks and comments below.
+            await timed('stories',()=>runDirectStories(pool,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60000)]))).catch(e=>console.error('Stories step:',e));
             // Up to three read-only receipt passes, ten minutes apart. Never a second Share.
             const receiptChecks=await pool.query(`SELECT item_id FROM scheduler.publishing_releases
                 WHERE item_id=ANY($1::uuid[]) AND state='needs_review' AND share_claimed_at IS NOT NULL
