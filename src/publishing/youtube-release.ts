@@ -50,7 +50,9 @@ export class YouTubeRelease extends PreparedYouTubeRelease {
  private async metadataRow(phrase:string){
   let last='';
   for(let pass=0;pass<3;pass++){
-   if(!await this.visible('accessibility id','id.metadata_editor.upload_button'))throw Error('YouTube metadata composer is not active');
+   // Oct 17 16:27-18:27: three Shorts stopped here while the composer was still drawing (the failure capture shows the
+   // Upload Short button visible). Wait up to 10 s for it instead of checking once.
+   await this.waitFor('accessibility id','id.metadata_editor.upload_button','Upload Short button',10_000).catch(()=>{throw Error('YouTube metadata composer is not active');});
    const png=Buffer.from((await this.request('/screenshot')).value,'base64'),m=await sharp(png).metadata();
    if(m.width!==1290||m.height!==2796)throw Error('YouTube metadata screen size changed');
    const words=await recognizeWords(png),parts=phrase.toLowerCase().split(' '),found=[];
